@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>日富一日·钱途光明</title>
+<link rel="stylesheet" href="css/style.css?v=20260730d">
+</head>
+<body>
+<div class="app">
+  <!-- 左侧菜单栏 -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-logo">日</div>
+      <div class="brand-text">
+        <div class="brand-name">日富一日</div>
+        <div class="brand-sub">钱途光明</div>
+      </div>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="sidebar-footer">
+      <div class="user-chip" id="userChip" title="点击更换头像">
+        <div class="avatar" id="avatarBox"></div>
+        <div class="user-meta">
+          <div class="user-name">我的日常</div>
+          <div class="user-role">个人 · 工作台</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- 右侧内容主区域 -->
+  <div class="main">
+    <header class="topbar">
+      <button class="hamburger" id="hamburger" title="菜单">☰</button>
+      <div class="page-title" id="pageTitle">今日问候</div>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="importBtn" title="导入数据">⤒</button>
+        <button class="icon-btn" id="exportBtn" title="导出数据">
+          ⤓<span class="red-dot" id="exportDot" hidden></span>
+        </button>
+        <button class="icon-btn" id="themeBtn" title="切换深/浅色">🌓</button>
+        <button class="icon-btn" id="avatarBtn" title="更换头像">👤</button>
+      </div>
+    </header>
+    <main class="content" id="content"></main>
+  </div>
+</div>
+
+<div class="overlay" id="overlay"></div>
+<div class="modal-root" id="modalRoot"></div>
+<div class="toast-root" id="toastRoot"></div>
+
+<input type="file" id="avatarInput" accept="image/*" hidden>
+<input type="file" id="importInput" accept="application/json,.json" hidden>
+
+<script src="js/config.js?v=20260730d"></script>
+<script src="js/app.js?v=20260730d"></script>
+</body>
+</html>
