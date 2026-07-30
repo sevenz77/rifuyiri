@@ -217,7 +217,7 @@ body.dark .topbar{background:rgba(28,32,64,.55);}
 .greet-card .g-text{font-size:18px; font-weight:700; line-height:1.9; margin-bottom:28px; position:relative; z-index:1; max-width:440px;margin-left:auto;margin-right:auto; color:var(--text);}
 .clock{font-size:40px; font-weight:800; letter-spacing:4px; background:linear-gradient(135deg,var(--primary),var(--primary2)); -webkit-background-clip:text; background-clip:text; color:transparent; position:relative; z-index:1; margin-bottom:8px;}
 .date-line{font-size:13.5px; color:var(--muted); letter-spacing:2.5px; position:relative; z-index:1; margin-bottom:20px;}
-.g-refresh{margin-top:4px;}
+.g-refresh{margin-top:4px; align-self:center; width:auto; max-width:max-content;}
 
 /* 随记便签 */
 .note-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:12px;}
@@ -376,6 +376,12 @@ body.dark .ai-tag.foreign{background:#3a2818; color:#ff9a50; border-color:#5a402
   .ai-card{padding:10px 6px;}
   .ai-logo{width:38px;height:38px;font-size:15px;}
 }
+
+/* 额度项纵向布局（名称/数据/进度条/按钮 各一行） */
+.quota-item{flex-direction:column; align-items:stretch;}
+.quota-item .body{width:100%; display:flex; flex-direction:column; gap:4px;}
+.quota-item .item-acts{justify-content:flex-start; margin-top:6px; padding-top:8px; border-top:1px solid var(--line);}
+.quota-item > .check{align-self:flex-start; position:absolute; left:10px; top:10px;}
 
 /* ----------------------------- 额度明细详情 ----------------------------- */
 .body[data-action]{cursor:pointer;}

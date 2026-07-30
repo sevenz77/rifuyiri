@@ -663,14 +663,14 @@ PAGES.quota = function(){
       const pct = q.total>0 ? Math.round(used/q.total*100) : 0;
       const warn = pct>=85;
       const realIdx = State.quotas.findIndex(x=>x.id===q.id);
-      html += '<div class="item">';
+      html += '<div class="item quota-item">';
       if(b.on) html += '<div class="check'+(b.sel.has(q.id)?' on':'')+'" data-action="sel" data-id="'+q.id+'">'+(b.sel.has(q.id)?'✓':'')+'</div>';
       const openAttr = b.on ? '' : ' data-action="openQuotaDetail" data-id="'+q.id+'"';
       const arrow = b.on ? '' : '<span class="arrow">›</span>';
-      html += '<div class="body"'+openAttr+'><div class="title">'+esc(q.name)+arrow+'</div>'+
+      html += '<div class="body"'+openAttr+'>'+
+        '<div class="title">'+esc(q.name)+arrow+'</div>'+
         '<div class="sub">已用 '+fmt(q.consumed)+' / 总额 '+fmt(q.total)+' · 剩余 '+fmt(Math.max(q.total-q.consumed,0))+'</div>'+
-        '<div class="bar'+(warn?' warn':'')+'" style="margin-top:8px"><i style="width:'+pct+'%"></i></div>'+
-        '</div>';
+        '<div class="bar'+(warn?' warn':'')+'" style="margin-top:8px"><i style="width:'+pct+'%"></i></div>';
       if(!b.on){
         html += '<div class="item-acts">'+
           '<button class="btn btn-sm" data-action="useQuota" data-id="'+q.id+'">记录消耗</button>'+
@@ -681,6 +681,7 @@ PAGES.quota = function(){
         }
         html += '</div>';
       }
+      html += '</div>';
       html += '</div>';
     });
   }
