@@ -636,6 +636,7 @@ ACTIONS.notes = {
  * 页面 3：额度追踪
  * =========================================================================== */
 PAGES.quota = function(){
+  if(qDetailId){ const q = State.quotas.find(x=>x.id===qDetailId); if(q) return renderQuotaDetail(q); qDetailId=null; }
   if(!filters.quota) filters.quota = { q:'' };
   const f = filters.quota;
   let list = State.quotas.slice();
@@ -663,7 +664,9 @@ PAGES.quota = function(){
       const warn = pct>=85;
       html += '<div class="item">';
       if(b.on) html += '<div class="check'+(b.sel.has(q.id)?' on':'')+'" data-action="sel" data-id="'+q.id+'">'+(b.sel.has(q.id)?'✓':'')+'</div>';
-      html += '<div class="body"><div class="title">'+esc(q.name)+'</div>'+
+      const openAttr = b.on ? '' : ' data-action="openQuotaDetail" data-id="'+q.id+'"';
+      const arrow = b.on ? '' : '<span class="arrow">›</span>';
+      html += '<div class="body"'+openAttr+'><div class="title">'+esc(q.name)+arrow+'</div>'+
         '<div class="sub">已用 '+fmt(q.consumed)+' / 总额 '+fmt(q.total)+' · 剩余 '+fmt(Math.max(q.total-q.consumed,0))+'</div>'+
         '<div class="bar'+(warn?' warn':'')+'" style="margin-top:8px"><i style="width:'+pct+'%"></i></div>'+
         '</div>';
@@ -709,8 +712,50 @@ ACTIONS.quota = {
   batchDel(){ const b=batch.quota; if(!b||b.sel.size===0){ toast('请先选择','bad'); return; }
     confirmDialog('批量删除', '确定删除选中的 '+b.sel.size+' 个额度吗？', ()=>{
       State.quotas = State.quotas.filter(x=>!b.sel.has(x.id)); save('quotas'); b.sel.clear(); b.on=false; toast('已删除'); PAGES.quota();
+    }); },
+  openQuotaDetail(id){ qDetailId = id; PAGES.quota(); },
+  quotaBack(){ qDetailId = null; PAGES.quota(); },
+  delQuotaRecord(id, el){ const rid = parseInt(el.dataset.rid,10); const q = State.quotas.find(x=>x.id===id); if(!q||isNaN(rid)||!q.records[rid]) return;
+    confirmDialog('删除记录', '确定删除这条消耗记录吗？该额度的已消耗将同步扣减。', ()=>{
+      q.consumed = Math.max(0, Math.round((q.consumed - q.records[rid].amount)*100)/100);
+      q.records.splice(rid, 1); save('quotas'); toast('已删除','good'); PAGES.quota();
     }); }
 };
+
+/* ----------------------------- 额度明细详情 ----------------------------- */
+let qDetailId = null;
+function renderQuotaDetail(q){
+  const used = Math.min(q.consumed, q.total);
+  const pct = q.total>0 ? Math.round(used/q.total*100) : 0;
+  const remaining = Math.max(q.total - q.consumed, 0);
+  let html = '<div class="page">';
+  html += '<div class="card"><div class="card-title">'+icon('quota')+'额度明细'+
+    '<span class="spacer" style="flex:1"></span>'+
+    '<button class="btn btn-sm" data-action="quotaBack">‹ 返回</button></div>';
+  html += '<div class="stat-row">'+
+    '<div class="stat"><div class="label">剩余额度</div><div class="val">'+fmt(remaining)+'</div></div>'+
+    '<div class="stat"><div class="label">已消耗</div><div class="val">'+fmt(q.consumed)+'</div></div>'+
+    '<div class="stat"><div class="label">总额度</div><div class="val">'+fmt(q.total)+'</div></div>'+
+    '</div>';
+  html += '<div class="bar'+(pct>=85?' warn':'')+'" style="margin-top:12px"><i style="width:'+pct+'%"></i></div>';
+  html += '<div class="sub" style="margin:6px 2px 16px">消耗进度 '+pct+'%</div>';
+  html += '<div class="card-title" style="margin-top:2px">消耗记录'+(q.records.length?('（'+q.records.length+' 笔）'):'')+'</div>';
+  html += '<div class="list">';
+  if(q.records.length===0){ html += '<div class="empty"><div class="big">🧾</div>暂无消耗记录，去列表页「记录消耗」吧</div>'; }
+  else {
+    q.records.slice().reverse().forEach((r, i)=>{
+      const ridx = q.records.length - 1 - i;
+      html += '<div class="item rec-item">';
+      html += '<div class="body"><div class="title">'+fmt(r.amount)+' <span class="sub" style="font-weight:400;margin-left:6px">'+esc(r.time||'')+'</span></div>';
+      if(r.note) html += '<div class="sub">备注：'+esc(r.note)+'</div>';
+      html += '</div>';
+      html += '<button class="btn btn-danger btn-sm" data-action="delQuotaRecord" data-id="'+q.id+'" data-rid="'+ridx+'">删除</button>';
+      html += '</div>';
+    });
+  }
+  html += '</div></div></div>';
+  $('#content').innerHTML = html;
+}
 
 /* =============================================================================
  * 页面 4：我的账本（参照鲨鱼记账）
