@@ -157,6 +157,7 @@ body.dark .topbar{background:rgba(28,32,64,.55);}
 .item .body{flex:1; min-width:0;}
 .item .title{font-weight:700; font-size:14.5px; word-break:break-word;}
 .item .sub{font-size:12px; color:var(--muted); margin-top:3px;}
+.item-acts{display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end; flex-shrink:0;}
 .item.done .title{text-decoration:line-through; color:var(--muted);}
 
 .check{
@@ -208,7 +209,7 @@ body.dark .topbar{background:rgba(28,32,64,.55);}
 .tag-hot{font-size:10px; background:linear-gradient(135deg,#ff9a6b,#ff6f91); color:#fff; padding:2px 7px; border-radius:999px; font-weight:700;}
 
 /* 问候页大卡（参照截图：引号装饰 + 居中精致） */
-.greet-card{text-align:center; padding:48px 24px 36px; position:relative; overflow:hidden;}
+.greet-card{text-align:center; padding:16px 24px 10vh; position:relative; overflow:hidden; display:flex; flex-direction:column; justify-content:center; min-height:calc(100dvh - 150px);}
 .g-quote-mark{
   position:absolute; top:18px; left:22px; font-size:64px; font-family:Georgia,serif;
   color:var(--primary); opacity:.12; line-height:1; z-index:0; pointer-events:none;

@@ -373,7 +373,7 @@ function getGreeting(){
   const t = todayStr();
   if(greetingCache.date !== t){ greetingCache = { date:t, text:'' }; }
   if(!greetingCache.text){
-    greetingCache.text = (dayOfMonth()%2===1) ? rand(CONFIG.enQuotes) : rand(CONFIG.cnJokes);
+    greetingCache.text = (dayOfMonth()%2===1) ? rand(CONFIG.enQuotes) : rand(CONFIG.cnQuotes);
   }
   return greetingCache;
 }
@@ -662,6 +662,7 @@ PAGES.quota = function(){
       const used = Math.min(q.consumed, q.total);
       const pct = q.total>0 ? Math.round(used/q.total*100) : 0;
       const warn = pct>=85;
+      const realIdx = State.quotas.findIndex(x=>x.id===q.id);
       html += '<div class="item">';
       if(b.on) html += '<div class="check'+(b.sel.has(q.id)?' on':'')+'" data-action="sel" data-id="'+q.id+'">'+(b.sel.has(q.id)?'✓':'')+'</div>';
       const openAttr = b.on ? '' : ' data-action="openQuotaDetail" data-id="'+q.id+'"';
@@ -670,7 +671,16 @@ PAGES.quota = function(){
         '<div class="sub">已用 '+fmt(q.consumed)+' / 总额 '+fmt(q.total)+' · 剩余 '+fmt(Math.max(q.total-q.consumed,0))+'</div>'+
         '<div class="bar'+(warn?' warn':'')+'" style="margin-top:8px"><i style="width:'+pct+'%"></i></div>'+
         '</div>';
-      if(!b.on) html += '<button class="btn btn-sm" data-action="useQuota" data-id="'+q.id+'">记录消耗</button><button class="btn btn-danger btn-sm" data-action="delQuota" data-id="'+q.id+'">删除</button>';
+      if(!b.on){
+        html += '<div class="item-acts">'+
+          '<button class="btn btn-sm" data-action="useQuota" data-id="'+q.id+'">记录消耗</button>'+
+          '<button class="btn btn-danger btn-sm" data-action="delQuota" data-id="'+q.id+'">删除</button>';
+        if(!f.q){
+          if(realIdx>0) html += '<button class="btn btn-sm btn-ghost" data-action="moveQuota" data-id="'+q.id+'" data-dir="up">↑ 上移</button>';
+          if(realIdx<State.quotas.length-1) html += '<button class="btn btn-sm btn-ghost" data-action="moveQuota" data-id="'+q.id+'" data-dir="down">↓ 下移</button>';
+        }
+        html += '</div>';
+      }
       html += '</div>';
     });
   }
@@ -715,6 +725,14 @@ ACTIONS.quota = {
     }); },
   openQuotaDetail(id){ qDetailId = id; PAGES.quota(); },
   quotaBack(){ qDetailId = null; PAGES.quota(); },
+  moveQuota(id, el){
+    const dir = el.dataset.dir==='up' ? -1 : 1;
+    const i = State.quotas.findIndex(x=>x.id===id);
+    const j = i + dir;
+    if(i<0 || j<0 || j>=State.quotas.length) return;
+    const t = State.quotas[i]; State.quotas[i] = State.quotas[j]; State.quotas[j] = t;
+    save('quotas'); PAGES.quota();
+  },
   delQuotaRecord(id, el){ const rid = parseInt(el.dataset.rid,10); const q = State.quotas.find(x=>x.id===id); if(!q||isNaN(rid)||!q.records[rid]) return;
     confirmDialog('删除记录', '确定删除这条消耗记录吗？该额度的已消耗将同步扣减。', ()=>{
       q.consumed = Math.max(0, Math.round((q.consumed - q.records[rid].amount)*100)/100);
