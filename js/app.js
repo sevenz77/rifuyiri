@@ -21,10 +21,25 @@ const State = {
   accounts: DB.get('accounts', []),
   assets:   DB.get('assets', []),   // 资产管家：银行卡余额记录
   rec:      DB.get('rec', {date:'', movie:'', tv:'', book:''}),
-  settings: DB.get('settings', { theme:'light', avatar:'', quotaPwd:'', accountPwd:'', lastExport:'', aiUsage:{} })
+  settings: DB.get('settings', { theme:'light', avatar:'', quotaPwd:'', accountPwd:'', lastExport:'', aiUsage:{} }),
+  checkins: DB.get('checkins', [])  // 打卡日志：['YYYY-MM-DD', ...]，仅追加；dailyReset 不触碰
 };
 const save = k => DB.set(k, State[k]);
 const saveSettings = () => DB.set('settings', State.settings);
+
+/* ----------------------------- 打卡日志（修复本周打卡次日消失 bug）----------------------------- */
+// 一次性迁移：从历史任务的 doneDate 重建 checkins（覆盖 dailyReset 把 done=false 但 doneDate 仍保留的情况）
+(function migrateCheckins(){
+  const set = new Set(State.checkins);
+  let dirty = false;
+  State.tasks.forEach(t=>{ if(t.doneDate && !set.has(t.doneDate)){ set.add(t.doneDate); dirty = true; }});
+  if(dirty){ State.checkins = Array.from(set).sort(); save('checkins'); }
+})();
+// 记录某一天的打卡（幂等：同日重复调用不重复添加）；打卡日志永不删除
+function recordCheckin(ds){ ds = ds || todayStr();
+  if(!State.checkins.includes(ds)){ State.checkins.push(ds); save('checkins'); }
+}
+const hasCheckin = ds => State.checkins.includes(ds);
 
 /* ----------------------------- 工具函数 ----------------------------- */
 const $  = s => document.querySelector(s);
@@ -414,12 +429,11 @@ ACTIONS.greeting = {
 function getWeekStreak(){
   const today = todayStr();
   let streak = 0, weekDone = 0;
-  // 连续打卡天数
+  // 连续打卡天数（基于持久化的打卡日志 dailyReset 不影响）
   for(let i=0; i<365; i++){
     const dd = new Date(); dd.setDate(dd.getDate()-i);
     const ds = dd.getFullYear()+'-'+pad(dd.getMonth()+1)+'-'+pad(dd.getDate());
-    const has = State.tasks.some(t=> t.done && t.doneDate===ds);
-    if(has) streak++; else break;
+    if(hasCheckin(ds)) streak++; else break;
   }
   // 本周完成天数（周一~周日）
   const now = new Date();
@@ -427,7 +441,7 @@ function getWeekStreak(){
   for(let i=1;i<=7;i++){
     const d=new Date(now); d.setDate(d.getDate()-dow+i);
     const ds=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
-    if(State.tasks.some(t=>t.done&&t.doneDate===ds)) weekDone++;
+    if(hasCheckin(ds)) weekDone++;
   }
   return {streak, weekDone};
 }
@@ -493,7 +507,7 @@ PAGES.todo = function(){
     const cds=cd.getFullYear()+'-'+pad(cd.getMonth()+1)+'-'+pad(cd.getDate());
     const isToday=(i===(nowDow||7));
     const isPast=i<(nowDow||7);
-    const checked=State.tasks.some(t=>t.done&&t.doneDate===cds);
+    const checked=hasCheckin(cds);
     const cls='wc-day'+(isToday?' wc-today':'')+(checked?' wc-done':'')+(isPast&&!checked?' wc-miss':'');
     html+='<div class="'+cls+'"><div class="wc-dow">'+['一','二','三','四','五','六','日'][i-1]+'</div><div class="wc-dot">'+(checked?'●':'○')+'</div></div>';
   }
@@ -535,7 +549,7 @@ ACTIONS.todo = {
   }); },
   toggle(id){ const t = State.tasks.find(x=>x.id===id); if(!t) return;
     if(t.done && t.doneDate===todayStr()){ t.done=false; t.doneDate=''; }
-    else { t.done=true; t.doneDate=todayStr(); }
+    else { t.done=true; t.doneDate=todayStr(); recordCheckin(); }
     save('tasks'); PAGES.todo(); },
   batchToggle(){ toggleBatch('todo'); },
   sel(id){ toggleSel('todo', id); },
@@ -546,6 +560,7 @@ ACTIONS.todo = {
     }); },
   batchDone(){ const b=batch.todo; if(!b||b.sel.size===0){ toast('请先选择','bad'); return; }
     State.tasks.forEach(x=>{ if(b.sel.has(x.id)){ x.done=true; x.doneDate=todayStr(); } });
+    recordCheckin();
     save('tasks'); toast('已标记完成','good'); PAGES.todo(); }
 };
 
