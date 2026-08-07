@@ -166,7 +166,6 @@ function init(){
     if(!$('#modalRoot').classList.contains('show')) $('#overlay').classList.remove('show');
   });
   $('#themeBtn').addEventListener('click', toggleTheme);
-  $('#avatarBtn').addEventListener('click', openAvatarModal);
   $('#userChip').addEventListener('click', openAvatarModal);
   $('#exportBtn').addEventListener('click', exportData);
   $('#importBtn').addEventListener('click', ()=> $('#importInput').click());
