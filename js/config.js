@@ -197,6 +197,8 @@ const CONFIG = {
     { name:'零一万物',    url:'https://chat.lmstudio.cn',               cat:'对话', region:'cn' },
     { name:'百川智能',    url:'https://chat.baichuan-ai.com',           cat:'对话', region:'cn' },
     { name:'商汤商量',    url:'https://chat.sensetime.com',             cat:'对话', region:'cn' },
+    { name:'360 智脑',    url:'https://ai.360.cn',                       cat:'对话', region:'cn' },
+    { name:'阶跃星辰',    url:'https://www.stepfun.com',                 cat:'对话', region:'cn' },
 
     /* —— 国内 · 做图 —— */
     { name:'通义万相',    url:'https://tongyi.aliyun.com/wanxiang',     cat:'做图', region:'cn' },
@@ -227,6 +229,7 @@ const CONFIG = {
     { name:'通义灵码',    url:'https://tongyi.aliyun.com/lingma',       cat:'编程', region:'cn' },
     { name:'CodeGeeX',    url:'https://codegeex.cn',                    cat:'编程', region:'cn' },
     { name:'Fitten Code',url:'https://code.fittentech.com',            cat:'编程', region:'cn' },
+    { name:'文心快码',    url:'https://baidu.com',                       cat:'编程', region:'cn' },
 
     /* —— 国外 · 对话 —— */
     { name:'ChatGPT',     url:'https://chat.openai.com',                cat:'对话', region:'foreign' },
@@ -237,6 +240,8 @@ const CONFIG = {
     { name:'Pi',          url:'https://pi.ai',                          cat:'对话', region:'foreign' },
     { name:'Mistral',     url:'https://chat.mistral.ai',                cat:'对话', region:'foreign' },
     { name:'Groq',        url:'https://groq.com',                       cat:'对话', region:'foreign' },
+    { name:'Meta AI',     url:'https://www.meta.ai',                      cat:'对话', region:'foreign' },
+    { name:'Le Chat',     url:'https://chat.mistral.ai/chat',             cat:'对话', region:'foreign' },
 
     /* —— 国外 · 做图 —— */
     { name:'Midjourney',  url:'https://www.midjourney.com',             cat:'做图', region:'foreign' },
@@ -247,6 +252,7 @@ const CONFIG = {
     { name:'Flux',        url:'https://flux1.ai',                       cat:'做图', region:'foreign' },
     { name:'Playground',  url:'https://playground.com',                 cat:'做图', region:'foreign' },
     { name:'Ideogram2',   url:'https://ideogram.ai/free',               cat:'做图', region:'foreign' },
+    { name:'Recraft',     url:'https://www.recraft.ai',                   cat:'做图', region:'foreign' },
 
     /* —— 国外 · 视频 —— */
     { name:'Runway',      url:'https://runwayml.com',                   cat:'视频', region:'foreign' },
@@ -255,6 +261,7 @@ const CONFIG = {
     { name:'Luma Dream Machine',url:'https://lumalabs.ai/dream-machine',cat:'视频', region:'foreign' },
     { name:'Sora',        url:'https://sora.com',                       cat:'视频', region:'foreign' },
     { name:'Haiper',      url:'https://haiper.ai',                     cat:'视频', region:'foreign' },
+    { name:'Veo',         url:'https://deepmind.google/technologies/veo', cat:'视频', region:'foreign' },
 
     /* —— 国外 · 音乐 —— */
     { name:'Suno',        url:'https://suno.com',                       cat:'音乐', region:'foreign' },
@@ -273,6 +280,8 @@ const CONFIG = {
     { name:'Replit Agent',url:'https://replit.com/agent',               cat:'编程', region:'foreign' },
     { name:'v0.dev',      url:'https://v0.dev',                         cat:'编程', region:'foreign' },
     { name:'Bolt.new',    url:'https://bolt.new',                       cat:'编程', region:'foreign' },
+    { name:'Windsurf',    url:'https://codeium.com/windsurf',             cat:'编程', region:'foreign' },
+    { name:'Cody',        url:'https://sourcegraph.com/cody',             cat:'编程', region:'foreign' },
 
     /* —— 国外 · 日常 —— */
     { name:'ChatGPT Search', url:'https://chatgpt.com/search',          cat:'日常', region:'foreign' },
@@ -281,5 +290,5 @@ const CONFIG = {
     { name:'Canva AI',    url:'https://canva.com',                      cat:'日常', region:'foreign' }
   ],
   // 数据更新时间标注（每月更新时修改此值）
-  lastUpdated: '2026-07'
+  lastUpdated: '2026-08'
 };
