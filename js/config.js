@@ -199,6 +199,13 @@ const CONFIG = {
     { name:'商汤商量',    url:'https://chat.sensetime.com',             cat:'对话', region:'cn' },
     { name:'360 智脑',    url:'https://ai.360.cn',                       cat:'对话', region:'cn' },
     { name:'阶跃星辰',    url:'https://www.stepfun.com',                 cat:'对话', region:'cn' },
+    { name:'腾讯元宝',    url:'https://yuanbao.tencent.com',            cat:'对话', region:'cn' },
+    { name:'海螺AI',      url:'https://www.minimax.chat',               cat:'对话', region:'cn' },
+    { name:'天工AI',      url:'https://www.tiangong.cn',                cat:'对话', region:'cn' },
+    { name:'华为盘古',    url:'https://pangu.huaweicloud.com',          cat:'对话', region:'cn' },
+    { name:'小米MiMo',    url:'https://www.mi.com',                     cat:'对话', region:'cn' },
+    { name:'美团LongCat', url:'https://www.meituan.com',                cat:'对话', region:'cn' },
+    { name:'京东言犀',    url:'https://yanxi.jd.com',                   cat:'对话', region:'cn' },
 
     /* —— 国内 · 做图 —— */
     { name:'通义万相',    url:'https://tongyi.aliyun.com/wanxiang',     cat:'做图', region:'cn' },
@@ -208,28 +215,64 @@ const CONFIG = {
     { name:'稿定AI',      url:'https://www.gaoding.com/ai',             cat:'做图', region:'cn' },
     { name:'美图AI',      url:'https://www.x-design.com',               cat:'做图', region:'cn' },
     { name:'Vega AI',     url:'https://vegaai.net',                     cat:'做图', region:'cn' },
+    { name:'即梦AI(做图)',url:'https://jimeng.jianying.com',            cat:'做图', region:'cn' },
+    { name:'豆包绘画',    url:'https://www.doubao.com',                 cat:'做图', region:'cn' },
+    { name:'海艺AI',      url:'https://hai.ai',                          cat:'做图', region:'cn' },
+    { name:'混元生图',    url:'https://hunyuan.tencent.com',            cat:'做图', region:'cn' },
+    { name:'星火绘世',    url:'https://xinghuo.xfyun.cn',               cat:'做图', region:'cn' },
 
     /* —— 国内 · 视频 —— */
     { name:'即梦AI',      url:'https://jimeng.jianying.com',            cat:'视频', region:'cn' },
     { name:'可灵',        url:'https://kling.kuaishou.com',             cat:'视频', region:'cn' },
     { name:'智谱清影',    url:'https://chatglm.cn/videos',              cat:'视频', region:'cn' },
     { name:'生数科技',    url:'https://vidu.studio',                    cat:'视频', region:'cn' },
+    { name:'海螺视频',    url:'https://hailuoai.com',                   cat:'视频', region:'cn' },
+    { name:'混元视频',    url:'https://hunyuan.tencent.com',            cat:'视频', region:'cn' },
+    { name:'万相视频',    url:'https://tongyi.aliyun.com/wan',          cat:'视频', region:'cn' },
+    { name:'PixVerse',    url:'https://pixverse.ai',                    cat:'视频', region:'cn' },
+    { name:'智影',        url:'https://zenvideo.qq.com',                cat:'视频', region:'cn' },
+    { name:'必剪Studio',  url:'https://member.bilibili.com',            cat:'视频', region:'cn' },
+    { name:'快影',        url:'https://www.kuaishou.com',               cat:'视频', region:'cn' },
+    { name:'开拍',        url:'https://www.kaijian.app',                cat:'视频', region:'cn' },
+    { name:'天幕',        url:'https://www.wondershare.cn',             cat:'视频', region:'cn' },
+    { name:'蒸汽机',      url:'https://wenxin.baidu.com',                cat:'视频', region:'cn' },
 
     /* —— 国内 · 音乐 —— */
     { name:'天工音乐',    url:'https://music.tiangong.cn',              cat:'音乐', region:'cn' },
     { name:'海绵音乐',    url:'https://haimian.music',                  cat:'音乐', region:'cn' },
+    { name:'海螺音乐',    url:'https://www.minimax.chat',               cat:'音乐', region:'cn' },
+    { name:'网易天音',    url:'https://tianyin.163.com',                cat:'音乐', region:'cn' },
+    { name:'腾讯启明星',  url:'https://y.qq.com',                        cat:'音乐', region:'cn' },
+    { name:'阶跃ACE-Step',url:'https://acestudio.ai',                   cat:'音乐', region:'cn' },
+    { name:'MELO音乐',    url:'https://melo.ai',                         cat:'音乐', region:'cn' },
 
     /* —— 国内 · 写作/日常 —— */
     { name:'秘塔写作猫',  url:'https://xiezuocat.com',                  cat:'写作', region:'cn' },
     { name:'火山写作',    url:'https://www.volcengine.com/writing',     cat:'写作', region:'cn' },
+    { name:'WPS AI',      url:'https://ai.wps.cn',                      cat:'写作', region:'cn' },
+    { name:'笔灵AI',      url:'https://ibiling.cn',                     cat:'写作', region:'cn' },
     { name:'通义听悟',    url:'https://tingwu.aliyun.com',              cat:'日常', region:'cn' },
     { name:'通义效率',    url:'https://tongyi.aliyun.com/efficiency',    cat:'日常', region:'cn' },
+    { name:'秘塔AI搜索',  url:'https://metaso.cn',                      cat:'日常', region:'cn' },
+    { name:'扣子Coze',    url:'https://www.coze.cn',                    cat:'日常', region:'cn' },
+    { name:'腾讯ima',     url:'https://ima.qq.com',                     cat:'日常', region:'cn' },
+    { name:'飞书智能伙伴',url:'https://www.feishu.cn',                  cat:'日常', region:'cn' },
+    { name:'钉钉AI助理',  url:'https://www.dingtalk.com',               cat:'日常', region:'cn' },
+    { name:'腾讯会议AI',  url:'https://meeting.tencent.com',            cat:'日常', region:'cn' },
+    { name:'讯飞听见',    url:'https://www.iflyrec.com',                cat:'日常', region:'cn' },
+    { name:'夸克AI',      url:'https://www.quark.cn',                   cat:'日常', region:'cn' },
+    { name:'纳米AI搜索',  url:'https://www.n.cn',                       cat:'日常', region:'cn' },
 
     /* —— 国内 · 编程 —— */
     { name:'通义灵码',    url:'https://tongyi.aliyun.com/lingma',       cat:'编程', region:'cn' },
     { name:'CodeGeeX',    url:'https://codegeex.cn',                    cat:'编程', region:'cn' },
     { name:'Fitten Code',url:'https://code.fittentech.com',            cat:'编程', region:'cn' },
     { name:'文心快码',    url:'https://baidu.com',                       cat:'编程', region:'cn' },
+    { name:'Trae',        url:'https://www.trae.com.cn',                cat:'编程', region:'cn' },
+    { name:'腾讯CodeBuddy',url:'https://www.codebuddy.ai',              cat:'编程', region:'cn' },
+    { name:'华为CodeArts Snap',url:'https://www.huaweicloud.com',       cat:'编程', region:'cn' },
+    { name:'Qoder',       url:'https://qoder.com',                      cat:'编程', region:'cn' },
+    { name:'蚂蚁CodeFuse',url:'https://codefuse.ai',                    cat:'编程', region:'cn' },
 
     /* —— 国外 · 对话 —— */
     { name:'ChatGPT',     url:'https://chat.openai.com',                cat:'对话', region:'foreign' },
@@ -262,7 +305,6 @@ const CONFIG = {
     { name:'Sora',        url:'https://sora.com',                       cat:'视频', region:'foreign' },
     { name:'Haiper',      url:'https://haiper.ai',                     cat:'视频', region:'foreign' },
     { name:'Veo',         url:'https://deepmind.google/technologies/veo', cat:'视频', region:'foreign' },
-    { name:'海螺 AI',     url:'https://hailuoai.com',                   cat:'视频', region:'foreign' },
 
     /* —— 国外 · 音乐 —— */
     { name:'Suno',        url:'https://suno.com',                       cat:'音乐', region:'foreign' },
