@@ -262,6 +262,7 @@ const CONFIG = {
     { name:'Sora',        url:'https://sora.com',                       cat:'视频', region:'foreign' },
     { name:'Haiper',      url:'https://haiper.ai',                     cat:'视频', region:'foreign' },
     { name:'Veo',         url:'https://deepmind.google/technologies/veo', cat:'视频', region:'foreign' },
+    { name:'海螺 AI',     url:'https://hailuoai.com',                   cat:'视频', region:'foreign' },
 
     /* —— 国外 · 音乐 —— */
     { name:'Suno',        url:'https://suno.com',                       cat:'音乐', region:'foreign' },

@@ -1019,9 +1019,10 @@ PAGES.ai = function(){
   $('#content').innerHTML = html;
 };
 ACTIONS.ai = {
-  aiTab(tab){ filters.ai.tab = tab; PAGES.ai(); },
-  openAi(name, el){
-    const url = el.dataset.url;
+  aiTab(_, el){ filters.ai.tab = el.dataset.tab; PAGES.ai(); },
+  openAi(_, el){
+    const name = el.dataset.name;
+    const url  = el.dataset.url;
     const u = State.settings.aiUsage||{}; u[name]=(u[name]||0)+1; State.settings.aiUsage=u; saveSettings();
     window.open(url, '_blank', 'noopener');
   }
