@@ -157,7 +157,6 @@ const NAV = [
   { key:'notes',    label:'灵感随记', icon:'notes' },
   { key:'quota',    label:'额度追踪', icon:'quota' },
   { key:'account',  label:'我的账本', icon:'account', children:[
-    {key:'accountQuick',  label:'快速记一笔'},
     {key:'accountMonth',  label:'本月账单'},
     {key:'accountYearly', label:'年月概况'},
     {key:'accountAsset',  label:'资产管家'} ]},
@@ -173,16 +172,21 @@ let acctMonthCursor = '';         // 本月账单游标 'YYYY-MM'（空 = 用当
 let mAccountSubView = 'overview'; // 本月账单视图：'overview' 总览 | 'detail' 详情
 let acctJumpDay     = '';         // 总览点格跳详情：定位到该日（渲染后滚动+高亮）
 let acctQuickType   = 'expense';  // 快速记一笔：'expense' 支出 | 'income' 收入
-let acctYearlyView  = 'month';    // 年月概况查询：'week' 周 | 'month' 月 | 'year' 年
-let acctYType       = 'expense';  // 年月概况查询类型：'expense' 支出 | 'income' 收入
-let acctYearCursor  = 0;          // 年月概况年份游标（0 = 用今年）
-let acctYMonth      = 0;          // 年月概况月份游标 1-12（0 = 用当月）
-let acctWeekMon     = '';         // 年月概况周游标：该周周一 'YYYY-MM-DD'（空 = 本周）
+/* 顶部 · 原「年月账单」（月账单/年账单切换 + 年度补录） */
+let acctBillView       = 'month';    // 'month' 月账单 | 'year' 年账单
+let acctBillYearCursor = 0;          // 月账单/年账单查看的年份（0 = 用今年）
+/* 底部 · 新「趋势查询」（支出/收入 + 周/月/年 + 折线图 + 排行） */
+let acctTrendType         = 'expense';  // 'expense' 支出 | 'income' 收入
+let acctTrendView         = 'month';    // 'week' | 'month' | 'year'
+let acctTrendYearCursor   = 0;          // 趋势年份游标（0 = 用今年）
+let acctTrendMonthCursor  = 0;          // 趋势月份游标 1-12（0 = 用当月）
+let acctWeekMon           = '';         // 趋势周游标：该周周一 'YYYY-MM-DD'（空 = 本周）
 /* 账本游标工具 */
 function acctYM(){ return acctMonthCursor || monthStr(); }
-function acctViewYear(){ return acctYearCursor || (new Date()).getFullYear(); }
-function acctViewMonth(){ return acctYMonth || (new Date()).getMonth()+1; }
-function acctYear(){ return acctViewYear(); }
+function acctBillYear(){ return acctBillYearCursor || (new Date()).getFullYear(); }
+function acctTrendYear(){ return acctTrendYearCursor || (new Date()).getFullYear(); }
+function acctTrendMonth(){ return acctTrendMonthCursor || (new Date()).getMonth()+1; }
+function acctYear(){ return acctBillYear(); }
 function shiftYM(ym, delta){
   const y = parseInt(ym.slice(0,4),10), m = parseInt(ym.slice(5,7),10);
   const d = new Date(y, m-1+delta, 1);
@@ -257,8 +261,9 @@ function formModal(title, fields, onOk, opts){
     $('#modalRoot').querySelectorAll('[data-k]').forEach(el=> data[el.dataset.k] = el.value.trim());
     const err = opts.validate ? opts.validate(data) : null;
     if(err){ toast(err,'bad'); return; }
-    onOk(data);
-    closeModal();
+    /* 如果 onOk 返回 false，保留弹窗不自动关闭（用于回调里 close+open 重开弹窗的场景） */
+    const keepOpen = onOk(data) === false;
+    if(!keepOpen) closeModal();
   };
 }
 
@@ -323,9 +328,25 @@ function navLabel(key){
   return '';
 }
 function goto(key){
-  // 父项（有 children 但自身无独立页）点击 → 展开并跳首个子项
+  // 父项【我的账本】有 children，但默认渲染【快速记一笔】而非首个子项【本月账单】
   const navItem = NAV.find(n=>n.key===key);
-  if(navItem && navItem.children){ key = navItem.children[0].key; }
+  if(navItem && navItem.children){
+    if(key==='account'){
+      currentPage = 'accountQuick';
+      $$('#nav .nav-item').forEach(el=>{
+        el.classList.toggle('active', el.dataset.page==='account');
+        el.classList.toggle('open', el.dataset.page==='account');
+      });
+      $$('#nav .subnav-item').forEach(el=> el.classList.remove('active'));
+      $('#pageTitle').textContent = '我的账本';
+      if(clockTimer){ clearInterval(clockTimer); clockTimer=null; }
+      $('#sidebar').classList.remove('open');
+      if(!$('#modalRoot').classList.contains('show')) $('#overlay').classList.remove('show');
+      openPage('accountQuick');
+      return;
+    }
+    key = navItem.children[0].key;
+  }
   currentPage = key;
   const parentKey = (NAV.find(n=>n.children && n.children.some(c=>c.key===key))||{}).key;
   $$('#nav .nav-item').forEach(el=>{
@@ -1303,19 +1324,41 @@ const ACCOUNT_CATS_INC = [
 ];
 /* 合并（去重 key，支出优先） */
 const ACCOUNT_ALL = ACCOUNT_CATS_EXP.concat(ACCOUNT_CATS_INC.filter(c=>!ACCOUNT_CATS_EXP.find(x=>x.key===c.key)));
-function catMeta(c){ return ACCOUNT_CATS_EXP.find(x=>x.key===c) || ACCOUNT_CATS_INC.find(x=>x.key===c) || {icon:'📦', key:c}; }
+function catMeta(c){
+  return ACCOUNT_CATS_EXP.find(x=>x.key===c) || ACCOUNT_CATS_INC.find(x=>x.key===c)
+    || (getUserCats().expense.find(x=>x.key===c)) || (getUserCats().income.find(x=>x.key===c))
+    || {icon:'📦', key:c};
+}
 function catIcon(c){ return catMeta(c).icon; }
 function catType(c){ return ACCOUNT_CATS_INC.find(x=>x.key===c) ? 'income' : 'expense'; }
+
+/* 用户自定义分类（持久化到 localStorage）· 与内置合并后返回完整分类列表 */
+const DEFAULT_USER_CATS = { expense: [], income: [] };
+function getUserCats(){
+  let u;
+  try { u = JSON.parse(localStorage.getItem('wb_userCats')||'null'); } catch(e){ u = null; }
+  if(!u || typeof u!=='object') u = JSON.parse(JSON.stringify(DEFAULT_USER_CATS));
+  if(!Array.isArray(u.expense)) u.expense = [];
+  if(!Array.isArray(u.income))   u.income   = [];
+  return u;
+}
+function saveUserCats(u){ localStorage.setItem('wb_userCats', JSON.stringify(u)); }
+function getCats(type){
+  const builtin = type==='income' ? ACCOUNT_CATS_INC : ACCOUNT_CATS_EXP;
+  const user    = (getUserCats()[type] || []).filter(c=> c && c.key && !builtin.find(x=>x.key===c.key));
+  return builtin.concat(user);
+}
 
 /* =============================================================================
  * 我的账本 · 一级默认页：快速记一笔（支出/收入切换 + 分类快捷 + 智能输入）
  * =========================================================================== */
 PAGES.accountQuick = function(){
   const type = acctQuickType;
-  const cats = type==='income' ? ACCOUNT_CATS_INC : ACCOUNT_CATS_EXP;
+  const cats = getCats(type);
   let html = '<div class="page">';
   html += '<div class="card"><div class="card-title">⚡ 快速记一笔'+
-    '<span style="flex:1"></span><button class="btn btn-sm btn-primary" data-action="smartAdd">➕ 智能输入</button></div>';
+    '<span style="flex:1"></span><button class="btn btn-sm" data-action="smartAdd">➕ 智能输入</button>'+
+    '<button class="btn btn-sm" data-action="openCatManager" title="分类管理：添加/排序/删除">⚙️ 设置</button></div>';
 
   // 支出 / 收入 切换
   html += '<div class="ai-tabs" style="margin-bottom:14px">'+
@@ -1335,6 +1378,150 @@ PAGES.accountQuick = function(){
   html += '</div></div>';
   $('#content').innerHTML = html;
 };
+
+/* 分类管理弹窗（用户自定义 + 排序）· 不做明显拖拽标识，仅提供功能 */
+const CAT_ICONS = ['🍴','🍜','🍱','🍣','🍰','🍻','🎮','🎵','🎬','�','🛍️','🎁','🧧','💄','💊','�','✏️','🎓','🏠','🚗','🚌','✈️','🚲','📱','💻','🖥️','🐶','🐱','🌳','⚽','🏃','💼','💰','📈','💳','🏦','📦','⚙️','🔧','🧹'];
+let catManagerType = 'expense';  // 分类管理弹窗持久类型（避免重开闭包丢失）
+function openCatManager(){
+  catManagerType = catManagerType || acctQuickType;
+  const viewType = catManagerType;
+  const builtin = viewType==='income' ? ACCOUNT_CATS_INC : ACCOUNT_CATS_EXP;
+  const user    = (getUserCats()[viewType]||[]).filter(c=> c && c.key && !builtin.find(x=>x.key===c.key));
+
+  let body = '<h3>⚙️ 分类管理</h3>'+
+    '<div class="ai-tabs" style="margin-bottom:14px">'+
+      '<div class="ai-tab'+(viewType==='expense'?' active':'')+'" data-cm-type="expense">支出</div>'+
+      '<div class="ai-tab'+(viewType==='income'?' active':'')+'" data-cm-type="income">收入</div>'+
+    '</div>'+
+    '<div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">内置分类固定不可改；下方自定义分类可 ↑↓ 排序、删除或添加新分类</div>'+
+    '<div id="cmList" class="cm-list">'+
+      '<div class="cm-section-title">� 内置（'+builtin.length+'）</div>'+
+      builtin.map((c,i)=>
+        '<div class="cm-row cm-builtin">'+
+          '<div class="cm-rank">'+(i+1)+'</div>'+
+          '<div class="cm-icon">'+c.icon+'</div>'+
+          '<div class="cm-name">'+esc(c.key)+'</div>'+
+          '<div class="cm-acts"><span class="cm-tag">内置</span></div>'+
+        '</div>'
+      ).join('')+
+      '<div class="cm-section-title">✨ 自定义（'+(user.length)+'）</div>'+
+      '<div id="cmUserRows">'+
+        (user.length===0 ? '<div class="cm-empty">还没有自定义分类，点下方「＋ 添加」</div>' :
+          user.map((c,i)=>
+            '<div class="cm-row" data-uidx="'+i+'">'+
+              '<div class="cm-rank">'+(i+1)+'</div>'+
+              '<div class="cm-icon">'+c.icon+'</div>'+
+              '<div class="cm-name">'+esc(c.key)+'</div>'+
+              '<div class="cm-acts">'+
+                '<button class="cm-btn" data-cm-act="up"   data-uidx="'+i+'" '+(i===0?'disabled':'')+' title="上移">↑</button>'+
+                '<button class="cm-btn" data-cm-act="down" data-uidx="'+i+'" '+(i===user.length-1?'disabled':'')+' title="下移">↓</button>'+
+                '<button class="cm-btn cm-btn-danger" data-cm-act="del" data-uidx="'+i+'" title="删除">✕</button>'+
+              '</div>'+
+            '</div>'
+          ).join(''))+
+      '</div>'+
+    '</div>'+
+    '<div class="cm-add">'+
+      '<button class="btn btn-primary btn-sm" data-cm-act="add">＋ 添加新分类</button>'+
+      '<button class="btn btn-sm" data-cm-act="reset" title="清空所有自定义分类">清空自定义</button>'+
+    '</div>'+
+    '<div class="modal-actions"><button class="btn" data-x="cancel">关闭</button></div>';
+  openModal(body);
+  $('#modalRoot').dataset.lock = '1';  // 锁定，遮罩不关
+  $$('#modalRoot [data-cm-type]').forEach(el=> el.onclick = ()=>{
+    catManagerType = el.dataset.cmType;
+    closeModal(); openCatManager();
+  });
+  $('#modalRoot').querySelector('[data-x="cancel"]').onclick = ()=>{ delete $('#modalRoot').dataset.lock; closeModal(); };
+  /* 上下移 */
+  $$('#modalRoot [data-cm-act="up"], #modalRoot [data-cm-act="down"]').forEach(el=> el.onclick = (e)=>{
+    e.stopPropagation();
+    const idx = parseInt(el.dataset.uidx, 10);
+    const u = getUserCats();
+    const arr = (u[viewType]||[]).filter(c=> c && c.key && !builtin.find(x=>x.key===c.key));
+    if(idx<0 || idx>=arr.length) return;
+    const j = el.dataset.cmAct==='up' ? idx-1 : idx+1;
+    if(j<0 || j>=arr.length) return;
+    [arr[idx], arr[j]] = [arr[j], arr[idx]];
+    /* 同步写回原数组（含去重） */
+    const merged = u[viewType] || [];
+    const idxInMerged = (k)=> merged.findIndex(x=> x && x.key===arr[k].key);
+    const a = idxInMerged(idx), b = idxInMerged(j);
+    if(a>=0 && b>=0){
+      [merged[a], merged[b]] = [merged[b], merged[a]];
+      u[viewType] = merged;
+      saveUserCats(u);
+    }
+    closeModal(); openCatManager();
+  });
+  /* 删除自定义分类 */
+  $$('#modalRoot [data-cm-act="del"]').forEach(el=> el.onclick = (e)=>{
+    e.stopPropagation();
+    const idx = parseInt(el.dataset.uidx, 10);
+    const u = getUserCats();
+    const arr = (u[viewType]||[]).filter(c=> c && c.key && !builtin.find(x=>x.key===c.key));
+    if(idx<0 || idx>=arr.length) return;
+    /* 检查是否有账目引用此分类，避免数据孤儿 */
+    const key = arr[idx].key;
+    const used = State.accounts.some(t=> t && t.cat===key);
+    const goDel = ()=>{
+      u[viewType] = (u[viewType]||[]).filter(c=> c.key !== key);
+      saveUserCats(u);
+      closeModal(); openCatManager();
+    };
+    if(used){
+      confirmDialog('删除分类', '该分类已有 '+State.accounts.filter(t=>t.cat===key).length+' 笔账目记录。删除后历史记录的分类名仍会保留，但不再出现在快捷分类里。确认删除？', goDel);
+    } else {
+      goDel();
+    }
+  });
+  /* 添加 */
+  const addBtn = $('#modalRoot').querySelector('[data-cm-act="add"]');
+  if(addBtn) addBtn.onclick = (e)=>{ e.stopPropagation(); openAddCatForm(viewType); };
+  /* 清空自定义 */
+  const resetBtn = $('#modalRoot').querySelector('[data-cm-act="reset"]');
+  if(resetBtn) resetBtn.onclick = (e)=>{
+    e.stopPropagation();
+    confirmDialog('清空自定义分类', '将清空所有【'+ (viewType==='income'?'收入':'支出') +'】自定义分类（不影响内置）。确认？', ()=>{
+      const u = getUserCats();
+      u[viewType] = [];
+      saveUserCats(u);
+      closeModal(); openCatManager();
+    });
+  };
+}
+
+/* 新增分类表单（emoji + 名称） */
+function openAddCatForm(viewType){
+  const builtin = viewType==='income' ? ACCOUNT_CATS_INC : ACCOUNT_CATS_EXP;
+  const fields = [
+    { key:'name', label:'分类名', type:'text', value:'', placeholder:'如：宠物、咖啡' },
+    { key:'icon', label:'图标', type:'text', value:'📦', placeholder:'点击下方选择' }
+  ];
+  formModal('＋ 添加'+ (viewType==='income'?'收入':'支出') +'分类', fields, d=>{
+    const name = (d.name||'').trim();
+    if(!name){ toast('请输入分类名','bad'); return; }
+    if(builtin.find(x=>x.key===name) || (getUserCats()[viewType]||[]).some(x=>x.key===name)){ toast('已存在同名分类','bad'); return; }
+    const u = getUserCats();
+    u[viewType] = u[viewType] || [];
+    u[viewType].push({ key:name, icon:d.icon||'📦' });
+    saveUserCats(u);
+    closeModal();
+    openCatManager();  // 回到管理页看到刚加的分类
+    toast('已添加：'+name,'good');
+    return false;  // 阻止 formModal 自动 closeModal（已手动 close+open）
+  }, { validate:(d)=> (d.name||'').trim() ? null : '请输入分类名' });
+  /* 在 formModal 后注入 emoji 选择网格 */
+  const grid = document.createElement('div');
+  grid.className = 'cm-emoji-grid';
+  grid.innerHTML = CAT_ICONS.map(e=>'<span class="cm-emoji" data-e="'+e+'">'+e+'</span>').join('');
+  const insert = $('#modalRoot').querySelector('[data-k="icon"]');
+  if(insert){ insert.parentNode.appendChild(grid); }
+  $$('#modalRoot .cm-emoji').forEach(el=> el.onclick = ()=>{
+    const inp = $('#modalRoot').querySelector('[data-k="icon"]');
+    if(inp){ inp.value = el.dataset.e; }
+  });
+}
 
 PAGES.accountMonth = function(){
   const ym = acctYM();
@@ -1588,13 +1775,13 @@ function weekIndexOf(d){
   const days = Math.round((d - w1)/86400000);
   return Math.floor(days/7)+1;
 }
-/* 取当前视图/类型下的流水（已按类型筛选、排除年度补录 lump） */
-function periodTxList(sign){
-  if(acctYearlyView==='year'){
-    const yr = acctViewYear();
+/* 取当前趋势视图/类型下的流水（已按类型筛选、排除年度补录 lump） */
+function trendTxList(sign){
+  if(acctTrendView==='year'){
+    const yr = acctTrendYear();
     return State.accounts.filter(t=> t.type===sign && t.source!=='yearly-backfill' && (t.date||'').length>=7 && parseInt(t.date.slice(0,4),10)===yr);
-  } else if(acctYearlyView==='month'){
-    const pk = acctViewYear()+'-'+pad(acctViewMonth());
+  } else if(acctTrendView==='month'){
+    const pk = acctTrendYear()+'-'+pad(acctTrendMonth());
     return State.accounts.filter(t=> t.type===sign && t.source!=='yearly-backfill' && (t.date||'').slice(0,7)===pk);
   } else {
     const mon = acctWeekMonday(); const sun = new Date(mon.getFullYear(),mon.getMonth(),mon.getDate()+6);
@@ -1603,17 +1790,17 @@ function periodTxList(sign){
   }
 }
 /* 聚合：分桶 + 总计 + 均值 + 区间文案 + 分类排行 */
-function computeYearlyQuery(){
-  const sign = acctYType==='income' ? 'income' : 'expense';
-  const txs = periodTxList(sign);
+function computeTrendQuery(){
+  const sign = acctTrendType==='income' ? 'income' : 'expense';
+  const txs = trendTxList(sign);
   let buckets = [], rangeLabel = '';
-  if(acctYearlyView==='year'){
-    const yr = acctViewYear();
+  if(acctTrendView==='year'){
+    const yr = acctTrendYear();
     for(let m=1;m<=12;m++) buckets.push({label:m+'月', val:0, key:pad(m)});
     rangeLabel = yr+' 年 · 月走势';
     txs.forEach(t=>{ const mi=parseInt((t.date||'').slice(5,7),10)-1; if(mi>=0&&mi<12) buckets[mi].val += t.amount; });
-  } else if(acctYearlyView==='month'){
-    const yr=acctViewYear(), mo=acctViewMonth();
+  } else if(acctTrendView==='month'){
+    const yr=acctTrendYear(), mo=acctTrendMonth();
     const last = new Date(yr, mo, 0).getDate();
     for(let d=1;d<=last;d++) buckets.push({label:String(d), val:0, key:pad(d)});
     rangeLabel = yr+' 年 '+mo+' 月 · 日走势';
@@ -1674,76 +1861,42 @@ function renderRankList(q){
 }
 
 PAGES.accountYearly = function(){
-  const view = acctYearlyView, type = acctYType;
-  const q = computeYearlyQuery();
+  const billView = acctBillView;
+  const trendType = acctTrendType;
   let html = '<div class="page">';
-  html += '<div class="card"><div class="card-title">📈 年月概况'+
-    '<span style="flex:1"></span><span class="mc-stat-inline">周 / 月 / 年 走势</span></div>';
-  // 支出 / 收入
-  html += '<div class="seg" style="margin-bottom:12px">'+
-    '<div class="seg-btn'+(type==='expense'?' active':'')+'" data-action="setYType" data-t="expense">支出 ▾</div>'+
-    '<div class="seg-btn'+(type==='income'?' active':'')+'" data-action="setYType" data-t="income">收入</div>'+
-    '</div>';
-  // 周 / 月 / 年
-  html += '<div class="ai-tabs" style="margin-bottom:12px">'+
-    '<div class="ai-tab'+(view==='week'?' active':'')+'" data-action="setYView" data-v="week">周</div>'+
-    '<div class="ai-tab'+(view==='month'?' active':'')+'" data-action="setYView" data-v="month">月</div>'+
-    '<div class="ai-tab'+(view==='year'?' active':'')+'" data-action="setYView" data-v="year">年</div>'+
-    '</div>';
 
-  // 时间导航
-  if(view==='week'){
-    const mon=acctWeekMonday(), sun=new Date(mon.getFullYear(),mon.getMonth(),mon.getDate()+6);
-    html += '<div class="month-switch">'+
-      '<button class="btn btn-sm btn-soft" data-action="prevWeek">‹ 上周</button>'+
-      '<div class="month-title">'+q.rangeLabel+'</div>'+
-      '<button class="btn btn-sm btn-soft" data-action="nextWeek">下周 ›</button></div>'+
-      (acctWeekMon? '<div style="text-align:center"><button class="btn btn-sm" data-action="backWeek">↩ 回到本周</button></div>':'');
-  } else if(view==='month'){
-    const yr=acctViewYear(), mo=acctViewMonth();
-    html += '<div class="month-switch">'+
-      '<button class="btn btn-sm btn-soft" data-action="prevMonthY">‹ '+mo+'月</button>'+
-      '<div class="month-title">'+yr+' 年'+(yr===(new Date()).getFullYear()&&mo===(new Date()).getMonth()+1?'<span class="mcur">本月</span>':'')+'</div>'+
-      '<button class="btn btn-sm btn-soft" data-action="nextMonthY">'+mo+'月 ›</button></div>'+
-      ((acctYMonth||acctYearCursor)? '<div style="text-align:center"><button class="btn btn-sm" data-action="backMonthY">↩ 回到本月</button></div>':'');
-  } else {
-    const yr=acctViewYear();
-    html += '<div class="month-switch">'+
-      '<button class="btn btn-sm btn-soft" data-action="prevYearY">‹ '+yr+'</button>'+
-      '<div class="month-title">'+yr+' 年'+(yr===(new Date()).getFullYear()?'<span class="mcur">今年</span>':'')+'</div>'+
-      '<button class="btn btn-sm btn-soft" data-action="nextYearY">'+yr+' ›</button></div>'+
-      (acctYearCursor? '<div style="text-align:center"><button class="btn btn-sm" data-action="backYearY">↩ 回到今年</button></div>':'');
-  }
+  /* ======== 顶部【原】年月账单（月/年切换 + 12月明细 + 年度补录）· 保留原功能 ======== */
+  html += '<div class="card"><div class="card-title">📊 年月账单'+
+    '<span style="flex:1"></span></div>'+
+    '<div class="ai-tabs" style="margin-bottom:0">'+
+    '<div class="ai-tab'+(billView==='month'?' active':'')+'" data-action="setBillView" data-v="month">月账单</div>'+
+    '<div class="ai-tab'+(billView==='year'?' active':'')+'" data-action="setBillView" data-v="year">年账单</div>'+
+    '</div></div>';
 
-  // 统计：总额 + 均值
-  const totLabel = type==='income'?'总收入':'总支出';
-  const avgLabel = '日均';
-  html += '<div class="stat-row">'+
-    '<div class="stat'+(type==='income'?' income':' expense')+'"><div class="label">'+totLabel+'</div><div class="val">'+fmt(q.total)+'</div></div>'+
-    '<div class="stat"><div class="label">'+avgLabel+'</div><div class="val">'+fmt(q.avg)+'</div></div>'+
-    '</div>';
-
-  // 折线图
-  html += '<div class="card"><div class="card-title">📉 '+(type==='income'?'收入':'支出')+'走势 · '+q.rangeLabel+'</div>'+
-    renderLineChart(q)+'</div>';
-
-  // 排行
-  html += '<div class="card"><div class="card-title">🏆 '+(type==='income'?'收入来源':'支出')+'排行</div>'+
-    renderRankList(q)+'</div>';
-
-  // 年视图：各月明细（可跳）+ 补录
-  if(view==='year'){
-    const yr=acctViewYear();
+  if(billView==='month'){
+    const yr = acctBillYear();
     const st = computeMonthlyStats(yr);
-    html += '<div class="card"><div class="card-title">🗓 '+yr+' 年 · 每月明细<span style="flex:1"></span><button class="btn btn-sm btn-primary" data-action="backfillYear">＋ 补录年度</button></div>';
+    html += '<div class="card">';
+    html += '<div class="month-switch">'+
+      '<button class="btn btn-sm btn-soft" data-action="prevBillYear">‹ '+(yr-1)+'</button>'+
+      '<div class="month-title">'+yr+' 年'+(yr===(new Date()).getFullYear()?'<span class="mcur">今年</span>':'')+'</div>'+
+      '<button class="btn btn-sm btn-soft" data-action="nextBillYear">'+(yr+1)+' ›</button>'+
+      '</div>';
+    html += '<div class="stat-row">'+
+      '<div class="stat income"><div class="label">年收入</div><div class="val">'+fmt(st.inc)+'</div></div>'+
+      '<div class="stat expense"><div class="label">年支出</div><div class="val">'+fmt(st.exp)+'</div></div>'+
+      '<div class="stat'+(st.bal<0?' expense':'')+'"><div class="label">年结余</div><div class="val">'+fmt(st.bal)+'</div></div>'+
+      '</div></div>';
+    html += '<div class="card"><div class="card-title">🗓 '+yr+' 年 · 每月明细</div>';
     if(st.inc===0 && st.exp===0){
       html += '<div class="empty" style="padding:14px">'+yr+' 年还没有账目记录</div>';
     } else {
       const curM = (yr===(new Date()).getFullYear()) ? (new Date()).getMonth()+1 : 0;
       html += '<div class="ystat-list">';
       st.months.forEach(m=>{
-        const bal = round2(m.inc-m.exp); const empty=(m.inc===0&&m.exp===0);
-        html += '<div class="ystat-row'+(m.m===curM?' on':'')+(empty?' dim':'')+'" data-action="jumpYMonth" data-ym="'+yr+'-'+pad(m.m)+'">'+
+        const bal = round2(m.inc-m.exp);
+        const empty = (m.inc===0 && m.exp===0);
+        html += '<div class="ystat-row'+(m.m===curM?' on':'')+(empty?' dim':'')+'" data-action="jumpBillMonth" data-ym="'+yr+'-'+pad(m.m)+'">'+
           '<div class="ystat-y">'+m.m+' 月'+(m.m===curM?' <span class="mcur">本月</span>':'')+'</div>'+
           '<div class="ystat-i">收 '+fmt(m.inc)+'</div>'+
           '<div class="ystat-e">支 '+fmt(m.exp)+'</div>'+
@@ -1753,8 +1906,31 @@ PAGES.accountYearly = function(){
       html += '</div><div class="mstat-legend">点任意月份可跳到「本月账单」查看该月明细</div>';
     }
     html += '</div>';
-
-    // 补录记录管理
+  } else {
+    const st = computeYearlyStats();
+    html += '<div class="card"><div class="card-title">🏁 历年总计'+
+      '<span style="flex:1"></span><button class="btn btn-sm btn-primary" data-action="backfillYear">＋ 补录年度</button></div>';
+    html += '<div class="stat-row">'+
+      '<div class="stat income"><div class="label">总收入</div><div class="val">'+fmt(st.totInc)+'</div></div>'+
+      '<div class="stat expense"><div class="label">总支出</div><div class="val">'+fmt(st.totExp)+'</div></div>'+
+      '<div class="stat'+(st.totBal<0?' expense':'')+'"><div class="label">总结余</div><div class="val">'+fmt(st.totBal)+'</div></div>'+
+      '</div></div>';
+    html += '<div class="card"><div class="card-title">📅 各年度明细</div>';
+    if(st.years.length===0){
+      html += '<div class="empty"><div class="big">📅</div>还没有任何年份数据。往年数据可点右上「＋ 补录年度」一次性录入</div>';
+    } else {
+      html += '<div class="ystat-list">';
+      st.years.forEach(y=>{
+        html += '<div class="ystat-row" data-action="jumpBillYear" data-y="'+y.year+'">'+
+          '<div class="ystat-y">'+y.year+' 年'+(y.backfill?' <span class="badge">含补录</span>':'')+'</div>'+
+          '<div class="ystat-i">收 '+fmt(y.inc)+'</div>'+
+          '<div class="ystat-e">支 '+fmt(y.exp)+'</div>'+
+          '<div class="ystat-b'+(y.bal<0?' neg':'')+'">结余 '+fmt(y.bal)+'</div>'+
+          '</div>';
+      });
+      html += '</div><div class="mstat-legend">点任意年份可切到「月账单」查看该年 12 个月明细</div>';
+    }
+    html += '</div>';
     const bf = State.accounts.filter(t=> t.source==='yearly-backfill').sort((a,b)=> (b.date||'').localeCompare(a.date||''));
     if(bf.length>0){
       html += '<div class="card"><div class="card-title">🗂 补录记录<span style="flex:1"></span><span class="mc-stat-inline">'+bf.length+' 笔</span></div><div class="list">';
@@ -1770,6 +1946,56 @@ PAGES.accountYearly = function(){
       html += '</div></div>';
     }
   }
+
+  /* ======== 底部【新】趋势查询（支出/收入 + 周/月/年 + 折线图 + 排行） ======== */
+  const q = computeTrendQuery();
+  html += '<div class="card"><div class="card-title">📈 趋势查询<span style="flex:1"></span><span class="mc-stat-inline">新增</span></div>';
+  /* 支出 / 收入 */
+  html += '<div class="seg" style="margin-bottom:12px">'+
+    '<div class="seg-btn'+(trendType==='expense'?' active':'')+'" data-action="setTrendType" data-t="expense">支出 ▾</div>'+
+    '<div class="seg-btn'+(trendType==='income'?' active':'')+'" data-action="setTrendType" data-t="income">收入</div>'+
+    '</div>';
+  /* 周 / 月 / 年 */
+  html += '<div class="ai-tabs" style="margin-bottom:12px">'+
+    '<div class="ai-tab'+(acctTrendView==='week'?' active':'')+'" data-action="setTrendView" data-v="week">周</div>'+
+    '<div class="ai-tab'+(acctTrendView==='month'?' active':'')+'" data-action="setTrendView" data-v="month">月</div>'+
+    '<div class="ai-tab'+(acctTrendView==='year'?' active':'')+'" data-action="setTrendView" data-v="year">年</div>'+
+    '</div>';
+  /* 时间导航 */
+  if(acctTrendView==='week'){
+    const mon=acctWeekMonday(), sun=new Date(mon.getFullYear(),mon.getMonth(),mon.getDate()+6);
+    html += '<div class="month-switch">'+
+      '<button class="btn btn-sm btn-soft" data-action="prevTrendWeek">‹ 上周</button>'+
+      '<div class="month-title">'+q.rangeLabel+'</div>'+
+      '<button class="btn btn-sm btn-soft" data-action="nextTrendWeek">下周 ›</button></div>'+
+      (acctWeekMon? '<div style="text-align:center"><button class="btn btn-sm" data-action="backTrendWeek">↩ 回到本周</button></div>':'');
+  } else if(acctTrendView==='month'){
+    const yr=acctTrendYear(), mo=acctTrendMonth();
+    html += '<div class="month-switch">'+
+      '<button class="btn btn-sm btn-soft" data-action="prevTrendMonth">‹ '+mo+'月</button>'+
+      '<div class="month-title">'+yr+' 年'+(yr===(new Date()).getFullYear()&&mo===(new Date()).getMonth()+1?'<span class="mcur">本月</span>':'')+'</div>'+
+      '<button class="btn btn-sm btn-soft" data-action="nextTrendMonth">'+mo+'月 ›</button></div>'+
+      ((acctTrendMonthCursor||acctTrendYearCursor)? '<div style="text-align:center"><button class="btn btn-sm" data-action="backTrendMonth">↩ 回到本月</button></div>':'');
+  } else {
+    const yr=acctTrendYear();
+    html += '<div class="month-switch">'+
+      '<button class="btn btn-sm btn-soft" data-action="prevTrendYear">‹ '+yr+'</button>'+
+      '<div class="month-title">'+yr+' 年'+(yr===(new Date()).getFullYear()?'<span class="mcur">今年</span>':'')+'</div>'+
+      '<button class="btn btn-sm btn-soft" data-action="nextTrendYear">'+yr+' ›</button></div>'+
+      (acctTrendYearCursor? '<div style="text-align:center"><button class="btn btn-sm" data-action="backTrendYear">↩ 回到今年</button></div>':'');
+  }
+  /* 总额 + 均值 */
+  const totLabel = trendType==='income'?'总收入':'总支出';
+  html += '<div class="stat-row">'+
+    '<div class="stat'+(trendType==='income'?' income':' expense')+'"><div class="label">'+totLabel+'</div><div class="val">'+fmt(q.total)+'</div></div>'+
+    '<div class="stat"><div class="label">日均</div><div class="val">'+fmt(q.avg)+'</div></div>'+
+    '</div>';
+  html += '<div style="margin-top:8px"><div class="card-title" style="margin:0 0 6px;font-size:13px">📉 '+(trendType==='income'?'收入':'支出')+'走势 · '+q.rangeLabel+'</div>'+
+    renderLineChart(q)+'</div>';
+  html += '<div style="margin-top:8px"><div class="card-title" style="margin:0 0 6px;font-size:13px">🏆 '+(trendType==='income'?'收入来源':'支出')+'排行</div>'+
+    renderRankList(q)+'</div>';
+  html += '</div>';
+
   html += '</div>';
   $('#content').innerHTML = html;
 };
@@ -1829,24 +2055,26 @@ PAGES.accountAsset = function(){
   if(State.assets.length===0){
     html += '<div class="empty"><div class="big">🏦</div>还没有卡片。添加资产（储蓄卡/现金/理财）或负债（信用卡/花呗/贷款）</div>';
   } else {
-    html += '<div class="list">';
+    html += '<div class="acct-list">';
     const order = assets.concat(liabs);
     order.forEach(a=>{
       const isLiab = a.kind==='liability';
-      html += '<div class="item'+(isLiab?' item-liab':'')+'">'+
-        '<div class="q-ic" style="width:40px;height:40px">'+(a.icon||(isLiab?'🧾':'💳'))+'</div>'+
-        '<div class="body"><div class="title">'+esc(a.name)+
-          (isLiab?' <span class="badge liab">负债</span>':'')+
-          (a.isDefaultPay?' <span class="badge def-pay">默认支出</span>':'')+
-          (a.isDefaultIncome?' <span class="badge def-inc">默认收入</span>':'')+
-          '</div><div class="sub">'+esc(a.bank||'—')+' · 更新于 '+(a.updated||'—')+'</div></div>'+
-        '<div class="title" style="color:'+(isLiab?'var(--bad)':'var(--primary)')+'">'+fmt(a.balance)+'</div>'+
-        '<div class="item-acts">'+
-          '<button class="btn btn-sm'+(a.isDefaultPay?' btn-primary':' btn-soft')+'" data-action="setPay" data-id="'+a.id+'" title="设为默认支出卡">💳 支</button>'+
-          '<button class="btn btn-sm'+(a.isDefaultIncome?' btn-primary':' btn-soft')+'" data-action="setInc" data-id="'+a.id+'" title="设为默认收入卡">💰 收</button>'+
+      const defTag = a.isDefaultPay?' <span class="acct-tag-pay">已设默认支出</span>'
+                  : a.isDefaultIncome?' <span class="acct-tag-inc">已设默认收入</span>' : '';
+      html += '<div class="acct-card'+(isLiab?' acct-liab':'')+'">'+
+        '<div class="acct-ic">'+(a.icon||(isLiab?'🧾':'💳'))+'</div>'+
+        '<div class="acct-body">'+
+          '<div class="acct-name">'+esc(a.name)+(isLiab?' <span class="badge liab">负债</span>':'')+defTag+'</div>'+
+          '<div class="acct-sub">'+esc(a.bank||'—')+' · 更新于 '+(a.updated||'—')+'</div>'+
+        '</div>'+
+        '<div class="acct-bal" style="color:'+(isLiab?'var(--bad)':'var(--primary)')+'">'+fmt(a.balance)+'</div>'+
+        '<div class="acct-acts">'+
+          '<button class="btn btn-sm'+(a.isDefaultPay?' btn-primary':' btn-soft')+'" data-action="setPay" data-id="'+a.id+'" title="'+(a.isDefaultPay?'取消默认支出卡':'设为默认支出卡')+'">💳 支</button>'+
+          '<button class="btn btn-sm'+(a.isDefaultIncome?' btn-primary':' btn-soft')+'" data-action="setInc" data-id="'+a.id+'" title="'+(a.isDefaultIncome?'取消默认收入卡':'设为默认收入卡')+'">💰 收</button>'+
           '<button class="btn btn-sm" data-action="editAsset" data-id="'+a.id+'">编辑</button>'+
           '<button class="btn btn-danger btn-sm" data-action="delAsset" data-id="'+a.id+'">删除</button>'+
-        '</div></div>';
+        '</div>'+
+      '</div>';
     });
     html += '</div>';
   }
@@ -1925,19 +2153,26 @@ const ACCOUNT_ACTIONS = {
   },
   /* ---- 快速记一笔 ---- */
   setQuickType(id, el){ acctQuickType = el.dataset.t || 'expense'; PAGES.accountQuick(); },
-  /* ---- 年月概况 ---- */
-  setYView(id, el){ acctYearlyView = el.dataset.v || 'month'; PAGES.accountYearly(); },
-  setYType(id, el){ acctYType = el.dataset.t || 'expense'; PAGES.accountYearly(); },
-  prevWeek(){ const m = acctWeekMonday(); acctWeekMon = fmtYMD(new Date(m.getFullYear(), m.getMonth(), m.getDate()-7)); PAGES.accountYearly(); },
-  nextWeek(){ const m = acctWeekMonday(); acctWeekMon = fmtYMD(new Date(m.getFullYear(), m.getMonth(), m.getDate()+7)); PAGES.accountYearly(); },
-  backWeek(){ acctWeekMon = ''; PAGES.accountYearly(); },
-  prevMonthY(){ acctYMonth = acctViewMonth()-1; if(acctYMonth<1){ acctYMonth=12; acctYearCursor = acctViewYear()-1; } PAGES.accountYearly(); },
-  nextMonthY(){ acctYMonth = acctViewMonth()+1; if(acctYMonth>12){ acctYMonth=1; acctYearCursor = acctViewYear()+1; } PAGES.accountYearly(); },
-  backMonthY(){ acctYMonth = 0; acctYearCursor = 0; PAGES.accountYearly(); },
-  prevYearY(){ acctYearCursor = acctViewYear()-1; PAGES.accountYearly(); },
-  nextYearY(){ acctYearCursor = acctViewYear()+1; PAGES.accountYearly(); },
-  backYearY(){ acctYearCursor = 0; PAGES.accountYearly(); },
-  jumpYMonth(id, el){ acctMonthCursor = el.dataset.ym; goto('accountMonth'); },
+  openCatManager(){ openCatManager(); },
+  /* ---- 年月概况 · 顶部 · 账单（月/年 + 12月明细 + 年度补录） ---- */
+  setBillView(id, el){ acctBillView = el.dataset.v || 'month'; PAGES.accountYearly(); },
+  prevBillYear(){ acctBillYearCursor = acctBillYear()-1; PAGES.accountYearly(); },
+  nextBillYear(){ acctBillYearCursor = acctBillYear()+1; PAGES.accountYearly(); },
+  jumpBillMonth(id, el){ acctMonthCursor = el.dataset.ym; goto('accountMonth'); },
+  jumpBillYear(id, el){ acctBillYearCursor = parseInt(el.dataset.y,10); acctBillView='month'; PAGES.accountYearly(); },
+  /* ---- 年月概况 · 底部 · 趋势（支出/收入 + 周/月/年 + 折线图 + 排行） ---- */
+  setTrendView(id, el){ acctTrendView = el.dataset.v || 'month'; PAGES.accountYearly(); },
+  setTrendType(id, el){ acctTrendType = el.dataset.t || 'expense'; PAGES.accountYearly(); },
+  prevTrendWeek(){ const m = acctWeekMonday(); acctWeekMon = fmtYMD(new Date(m.getFullYear(), m.getMonth(), m.getDate()-7)); PAGES.accountYearly(); },
+  nextTrendWeek(){ const m = acctWeekMonday(); acctWeekMon = fmtYMD(new Date(m.getFullYear(), m.getMonth(), m.getDate()+7)); PAGES.accountYearly(); },
+  backTrendWeek(){ acctWeekMon = ''; PAGES.accountYearly(); },
+  prevTrendMonth(){ acctTrendMonthCursor = acctTrendMonth()-1; if(acctTrendMonthCursor<1){ acctTrendMonthCursor=12; acctTrendYearCursor = acctTrendYear()-1; } PAGES.accountYearly(); },
+  nextTrendMonth(){ acctTrendMonthCursor = acctTrendMonth()+1; if(acctTrendMonthCursor>12){ acctTrendMonthCursor=1; acctTrendYearCursor = acctTrendYear()+1; } PAGES.accountYearly(); },
+  backTrendMonth(){ acctTrendMonthCursor = 0; acctTrendYearCursor = 0; PAGES.accountYearly(); },
+  prevTrendYear(){ acctTrendYearCursor = acctTrendYear()-1; PAGES.accountYearly(); },
+  nextTrendYear(){ acctTrendYearCursor = acctTrendYear()+1; PAGES.accountYearly(); },
+  backTrendYear(){ acctTrendYearCursor = 0; PAGES.accountYearly(); },
+  /* ---- 年度补录 ---- */
   backfillYear(){ openBackfillForm(); },
   delBackfill(id){ confirmDialog('删除补录', '确定删除这条年度补录数据吗？', ()=>{
     const t = State.accounts.find(x=>x.id===id);
