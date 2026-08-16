@@ -449,8 +449,8 @@ function __onDragUp(){
   if(__drag.moved){
     __drag.item.classList.remove('dragging');
     const ids = [...$$( '#content .item[data-kind="'+__drag.kind+'"]' )].map(x=> x.dataset.id);
-    let i = 0;
-    State.tasks.forEach(t=>{ if((t.kind==='short'?'week':(t.kind||'long'))===__drag.kind){ t.order = i++; } });
+    const orderMap = {}; ids.forEach((id, idx)=> orderMap[id] = idx);
+    State.tasks.forEach(t=>{ if((t.kind==='short'?'week':(t.kind||'long'))===__drag.kind){ t.order = orderMap[t.id]; } });
     save('tasks');
     window.__justDragged = true;
     PAGES.todo();
