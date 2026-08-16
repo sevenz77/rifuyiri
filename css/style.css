@@ -295,18 +295,39 @@ body.dark .todo-streak-bar{background:linear-gradient(135deg,#2a3355,#3a3055); c
 .todo-input{flex:1; min-width:0; border-radius:12px !important;}
 .todo-add-btn{width:46px; height:42px;border-radius:12px;font-size:22px;padding:0;display:flex;align-items:center;justify-content:center;}
 
-/* 本周打卡日历 */
-.week-cal{display:flex; gap:6px; justify-content:center; padding:8px 0;}
-.wc-day{
-  width:44px; display:flex; flex-direction:column; align-items:center; gap:4px;
-  padding:8px 4px 6px; border-radius:14px; transition:.15s;
+/* 本月活力图 */
+.mc-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; padding:0 4px;}
+.mc-title{font-size:15px; font-weight:800; color:var(--primary);}
+.mc-stat{font-size:12px; color:var(--muted); font-weight:600;}
+.mc-weekrow{display:grid; grid-template-columns:repeat(7,1fr); gap:6px; margin-bottom:6px; text-align:center;
+  font-size:11.5px; color:var(--muted); font-weight:700;}
+.mc-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:6px;}
+.mc-day{
+  aspect-ratio:1/1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  border-radius:10px; background:var(--card2); border:1px solid var(--line); position:relative;
+  font-size:13px; font-weight:600; color:var(--text); cursor:pointer; transition:.15s; padding:2px;
 }
-.wc-dow{font-size:11.5px; color:var(--muted); font-weight:700;}
-.wc-dot{font-size:15px; color:var(--line);}
-.wc-today{background:linear-gradient(135deg,rgba(108,140,232,.12),rgba(155,140,240,.12)); border:1.5px solid var(--primary);}
-.wc-today .wc-dow{color:var(--primary);}
-.wc-done .wc-dot{color:var(--good); font-weight:900;}
-.wc-miss .wc-dot{color:var(--bad); opacity:.45;}
+.mc-day:not(.mc-blank):not(.mc-future):active{transform:scale(.93);}
+.mc-blank{background:transparent; border:none; cursor:default;}
+.mc-future{color:var(--muted); opacity:.4; cursor:default; background:transparent; border-color:transparent;}
+.mc-empty{color:var(--muted);}
+.mc-done{background:linear-gradient(135deg,#dff5e5,#c7e9d2); color:#1d6f46; border-color:#a9dcb8; cursor:pointer;}
+body.dark .mc-done{background:linear-gradient(135deg,#274d3e,#1f3e30); color:#9ce2b6; border-color:#33604c;}
+.mc-done .mc-tick{color:#1d6f46; font-weight:900; font-size:11px; position:absolute; bottom:2px; right:0; left:0; text-align:center;}
+body.dark .mc-done .mc-tick{color:#9ce2b6;}
+.mc-today{background:linear-gradient(135deg,#d4e7ff,#e0d4ff); border:1.5px solid var(--primary); color:var(--primary); font-weight:800;}
+body.dark .mc-today{background:linear-gradient(135deg,#2e3866,#3d345f); color:#bdc8ff;}
+.mc-today .mc-tag{font-size:9.5px; color:var(--primary); position:absolute; top:1px; left:50%; transform:translateX(-50%);
+  background:rgba(255,255,255,.95); padding:0 4px; border-radius:5px; font-weight:700; line-height:1.4;}
+body.dark .mc-today .mc-tag{background:rgba(0,0,0,.45); color:#bdc8ff;}
+
+/* 日详情弹窗 */
+.day-stat{font-size:14px; color:var(--muted); margin-bottom:14px; text-align:center; padding:8px 0; background:var(--card2); border-radius:10px;}
+.day-stat b{color:var(--primary); font-weight:800; font-size:16px;}
+.day-section{margin-bottom:14px;}
+.day-label{font-size:13.5px; font-weight:700; color:var(--accent); margin-bottom:8px; display:flex; align-items:center;}
+.day-row{padding:9px 12px; border-radius:10px; background:var(--card2); margin-bottom:5px; font-size:13.5px; border:1px solid var(--line); color:var(--text);}
+.day-empty{padding:14px; text-align:center; font-size:13px; color:var(--muted); background:var(--card2); border-radius:10px; border:1px dashed var(--line);}
 .todo-filters{display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:4px;}
 
 /* ----------------------------- 灵感随记（参照截图改版） ----------------------------- */
@@ -364,8 +385,7 @@ body.dark .ai-tag.foreign{background:#3a2818; color:#ff9a50; border-color:#5a402
   /* 待办移动端 */
   .todo-title{font-size:19px;}
   .todo-streak-bar{font-size:12.5px; padding:10px 14px;}
-  .week-cal{gap:4px;}
-  .wc-day{width:38px;padding:6px 2px 5px;}
+  .mc-day{font-size:11.5px; border-radius:8px; gap:2px;}
   /* 灵感随记移动端 */
   .rec-card-big{padding:18px 12px;}
   .rcb-icon{font-size:30px;}

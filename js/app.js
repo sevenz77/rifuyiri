@@ -425,24 +425,24 @@ ACTIONS.greeting = {
 /* =============================================================================
  * 页面 1：今日待办（参照截图：日期头 · 打卡统计 · 进度条 · 底部输入栏 · 本周打卡日历）
  * =========================================================================== */
-function getWeekStreak(){
-  const today = todayStr();
-  let streak = 0, weekDone = 0;
-  // 连续打卡天数（基于持久化的打卡日志 dailyReset 不影响）
+function getVitalityStats(){
+  // 当前连续打卡天数（基于持久化的打卡日志 dailyReset 不影响）
+  let streak = 0;
   for(let i=0; i<365; i++){
     const dd = new Date(); dd.setDate(dd.getDate()-i);
     const ds = dd.getFullYear()+'-'+pad(dd.getMonth()+1)+'-'+pad(dd.getDate());
     if(hasCheckin(ds)) streak++; else break;
   }
-  // 本周完成天数（周一~周日）
+  // 本月已活跃天数（按当月 1..lastDay 统计打卡日志）
   const now = new Date();
-  const dow = now.getDay()||7; // 1=Mon..7=Sun
-  for(let i=1;i<=7;i++){
-    const d=new Date(now); d.setDate(d.getDate()-dow+i);
-    const ds=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
-    if(hasCheckin(ds)) weekDone++;
+  const y = now.getFullYear(), m = now.getMonth();
+  const lastDay = new Date(y, m+1, 0).getDate();
+  let monthDone = 0;
+  for(let d=1; d<=lastDay; d++){
+    const ds = y+'-'+pad(m+1)+'-'+pad(d);
+    if(hasCheckin(ds)) monthDone++;
   }
-  return {streak, weekDone};
+  return {streak, monthDone};
 }
 PAGES.todo = function(){
   if(!filters.todo) filters.todo = { q:'', status:'all' };
@@ -455,7 +455,7 @@ PAGES.todo = function(){
   const doneCount = State.tasks.filter(t=>t.done && t.doneDate===todayStr()).length;
   const totalCount = State.tasks.length;
   const pct = totalCount>0 ? Math.round(doneCount/totalCount*100) : 0;
-  const wk = getWeekStreak();
+  const vs = getVitalityStats();
   const d = new Date();
   const week = ['日','一','二','三','四','五','六'];
   const dateStr = pad(d.getMonth()+1)+'-'+pad(d.getDate())+' 周'+week[d.getDay()];
@@ -470,9 +470,9 @@ PAGES.todo = function(){
   html += '<div class="todo-date">'+dateStr+'</div>';
   html += '<div class="todo-streak-bar">'+
     '<span class="ts-icon">🔥</span>'+
-    '<span>已连续打卡 <b>'+wk.streak+'</b> 天</span>'+
+    '<span>已连续打卡 <b>'+vs.streak+'</b> 天</span>'+
     '<span class="ts-sep">|</span>'+
-    '<span>本周完成 <b>'+wk.weekDone+' / 7</b> 天</span>'+
+    '<span>本月已活跃 <b>'+vs.monthDone+'</b> 天</span>'+
     '</div>';
 
   /* ---- 任务列表 ---- */
@@ -498,17 +498,33 @@ PAGES.todo = function(){
     '<button class="btn btn-primary todo-add-btn" data-action="addTask">＋</button>'+
     '</div>';
 
-  /* ---- 本周打卡日历 ---- */
-  html += '<div class="card"><div class="card-title">📅 本周打卡</div>';
-  html += '<div class="week-cal">';
-  for(let i=1;i<=7;i++){
-    const cd=new Date(d); cd.setDate(d.getDate()-nowDow+i);
-    const cds=cd.getFullYear()+'-'+pad(cd.getMonth()+1)+'-'+pad(cd.getDate());
-    const isToday=(i===(nowDow||7));
-    const isPast=i<(nowDow||7);
-    const checked=hasCheckin(cds);
-    const cls='wc-day'+(isToday?' wc-today':'')+(checked?' wc-done':'')+(isPast&&!checked?' wc-miss':'');
-    html+='<div class="'+cls+'"><div class="wc-dow">'+['一','二','三','四','五','六','日'][i-1]+'</div><div class="wc-dot">'+(checked?'●':'○')+'</div></div>';
+  /* ---- 本月活力图 ---- */
+  html += '<div class="card"><div class="card-title">📅 本月活力图</div>';
+  html += '<div class="mc-head">'+
+    '<div class="mc-title">'+d.getFullYear()+' 年 '+pad(d.getMonth()+1)+' 月</div>'+
+    '<div class="mc-stat">🔥 连续 '+vs.streak+' 天 · ✨ 已活跃 '+vs.monthDone+' 天</div>'+
+    '</div>';
+  html += '<div class="mc-weekrow"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>';
+  html += '<div class="mc-grid">';
+  const todayDStr = todayStr();
+  const monthLast = new Date(d.getFullYear(), d.getMonth()+1, 0).getDate();
+  const firstDow = new Date(d.getFullYear(), d.getMonth(), 1).getDay(); // 0=Sun..6=Sat
+  for(let i=0; i<firstDow; i++) html += '<div class="mc-day mc-blank"></div>';
+  for(let day=1; day<=monthLast; day++){
+    const ds = d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(day);
+    const isToday = ds===todayDStr;
+    const isFuture = ds>todayDStr;
+    const checked = hasCheckin(ds);
+    let cls = 'mc-day';
+    if(isToday) cls += ' mc-today';
+    else if(checked) cls += ' mc-done';
+    else if(isFuture) cls += ' mc-future';
+    else cls += ' mc-empty';
+    html += '<div class="'+cls+'" data-action="openDay" data-day="'+ds+'">';
+    html += '<div class="mc-num">'+day+'</div>';
+    if(isToday) html += '<div class="mc-tag">今天</div>';
+    else if(checked) html += '<div class="mc-tick">✓</div>';
+    html += '</div>';
   }
   html += '</div></div>';
 
@@ -560,7 +576,45 @@ ACTIONS.todo = {
   batchDone(){ const b=batch.todo; if(!b||b.sel.size===0){ toast('请先选择','bad'); return; }
     State.tasks.forEach(x=>{ if(b.sel.has(x.id)){ x.done=true; x.doneDate=todayStr(); } });
     recordCheckin();
-    save('tasks'); toast('已标记完成','good'); PAGES.todo(); }
+    save('tasks'); toast('已标记完成','good'); PAGES.todo(); },
+  openDay(_id, el){
+    const ds = el.dataset.day;
+    const wd = ['日','一','二','三','四','五','六'];
+    const dt = new Date(ds+'T00:00:00');
+    const isToday = ds===todayStr();
+    const isFuture = ds>todayStr();
+    const checked = hasCheckin(ds);
+    const doneList   = State.tasks.filter(t => t.done && t.doneDate===ds);
+    const undoneList = State.tasks.filter(t => !t.done || t.doneDate!==ds);
+    const dow = wd[dt.getDay()]; const m=dt.getMonth()+1, day=dt.getDate();
+    let body = '<h3>'+m+'月'+day+'日 · 周'+dow+'</h3>';
+    if(isToday){
+      body += '<div class="day-stat">今日已办 <b>'+doneList.length+'</b> 项 · 还剩 <b>'+undoneList.length+'</b> 项</div>';
+      body += '<div class="day-section"><div class="day-label">✅ 已办</div>';
+      if(doneList.length===0) body += '<div class="day-empty">暂无已完成事项</div>';
+      else doneList.forEach(t => body += '<div class="day-row">'+esc(t.text)+'</div>');
+      body += '</div>';
+      body += '<div class="day-section"><div class="day-label">⏳ 未办</div>';
+      if(undoneList.length===0) body += '<div class="day-empty">🎉 今日全部完成</div>';
+      else undoneList.forEach(t => body += '<div class="day-row">'+esc(t.text)+'</div>');
+      body += '</div>';
+    } else if(isFuture){
+      body += '<div class="day-stat">🔮 这天尚未到来</div>';
+      body += '<div class="day-section"><div class="day-empty">该日尚无任务计划</div></div>';
+    } else {
+      // 过去
+      if(checked){
+        body += '<div class="day-stat">🔥 这天已打卡（历史记录只记日期，不记具体事项）</div>';
+        body += '<div class="day-section"><div class="day-empty">如需追记往事，请在「便签」模块加一条</div></div>';
+      } else {
+        body += '<div class="day-stat">😴 这天未打卡</div>';
+        body += '<div class="day-section"><div class="day-empty">无记录</div></div>';
+      }
+    }
+    body += '<div class="modal-actions"><button class="btn btn-primary" data-x="cancel">关闭</button></div>';
+    openModal(body);
+    $('#modalRoot').querySelector('[data-x="cancel"]').onclick = closeModal;
+  }
 };
 
 /* =============================================================================
