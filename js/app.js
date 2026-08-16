@@ -97,6 +97,48 @@ const rand = arr => arr[Math.floor(Math.random()*arr.length)];
 const fmt = n => '¥' + (Math.round(n*100)/100).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2});
 const daysBetween = (a,b) => { const da=new Date(a), db=new Date(b); return Math.floor((db-da)/86400000); };
 
+const round2 = n => Math.round((Number(n)||0)*100)/100;
+
+/* ---- 账本联动工具：默认卡 / 负债卡余额自动增减（不绑卡则不联动） ---- */
+function findDefault(kind){ // 'pay' 默认支出卡 | 'income' 默认收入卡
+  return State.assets.find(a=> kind==='pay' ? a.isDefaultPay : a.isDefaultIncome) || null;
+}
+function setDefault(kind, cardId, on){
+  State.assets.forEach(x=>{
+    if(kind==='pay') x.isDefaultPay    = (x.id===cardId && on);
+    else             x.isDefaultIncome = (x.id===cardId && on);
+  });
+}
+function applyTxToAsset(tx, sign){ // sign:+1 记账 / -1 撤销
+  if(!tx.accountId) return;
+  const a = State.assets.find(x=>x.id===tx.accountId);
+  if(!a) return; // 卡已删 → 静默跳过（失败安全）
+  const delta = (tx.type==='income' ? tx.amount : -tx.amount) * sign;
+  a.balance = Math.round((a.balance + delta)*100)/100;
+  a.updated = nowStr();
+}
+/* 表单里的「归属卡片」值 → 真实卡 id（'__def__' 表示跟随默认卡，'' 表示不绑卡） */
+function resolveTxCard(d){
+  if(d.accountId === undefined || d.accountId === '__def__'){
+    const c = findDefault(d.type==='income' ? 'income' : 'pay');
+    return c ? c.id : '';
+  }
+  return d.accountId || '';
+}
+/* 金额缩写（日格子空间小）：1234 → 1.2k / 12345 → 1.2w */
+function shortNum(n){
+  n = Math.abs(n);
+  if(n >= 10000) return (Math.round(n/1000)/10) + 'w';
+  if(n >= 1000)  return (Math.round(n/100)/10) + 'k';
+  return String(Math.round(n));
+}
+/* 'YYYY-MM-DD' → '周三' */
+function dowCN(ds){
+  const d = new Date(ds + 'T00:00:00');
+  if(isNaN(d.getTime())) return '';
+  return '周' + ['日','一','二','三','四','五','六'][d.getDay()];
+}
+
 /* ----------------------------- 图标（钝感圆角 + 微阴影） ----------------------------- */
 const GLYPHS = {
   greeting:'<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5 5l1.4 1.4M17.6 17.6 19 19M19 5l-1.4 1.4M6.4 17.6 5 19"/>',
@@ -114,13 +156,36 @@ const NAV = [
   { key:'todo',     label:'今日待办', icon:'todo' },
   { key:'notes',    label:'灵感随记', icon:'notes' },
   { key:'quota',    label:'额度追踪', icon:'quota' },
-  { key:'account',  label:'我的账本', icon:'account' },
+  { key:'account',  label:'我的账本', icon:'account', children:[
+    {key:'accountMonth',  label:'本月账单'},
+    {key:'accountYearly', label:'年月概况'},
+    {key:'accountAsset',  label:'资产管家'} ]},
   { key:'ai',       label:'AI+',      icon:'ai' }
 ];
 
 let currentPage = 'greeting';
 const filters = {};   // 各页面筛选状态
 const batch   = {};   // 各页面批量选择状态 {on, sel:Set}
+
+/* ---- 我的账本 · 三个二级页的视图状态（懒初始化，避免加载顺序问题） ---- */
+let acctMonthCursor = '';         // 本月账单游标 'YYYY-MM'（空 = 用当月）
+let mAccountSubView = 'overview'; // 本月账单视图：'overview' 总览 | 'detail' 详情
+let acctYearlyView  = 'month';    // 年月概况视图：'month' 月账单 | 'year' 年账单
+let acctYearCursor  = 0;          // 月账单查看的年份（0 = 用今年）
+/* 账本游标工具 */
+function acctYM(){ return acctMonthCursor || monthStr(); }
+function acctYear(){ return acctYearCursor || (new Date()).getFullYear(); }
+function shiftYM(ym, delta){
+  const y = parseInt(ym.slice(0,4),10), m = parseInt(ym.slice(5,7),10);
+  const d = new Date(y, m-1+delta, 1);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+}
+/* 账本任意页刷新（三个二级页共用 ACTIONS，需按当前页重绘） */
+function refreshAcct(){
+  if(currentPage==='accountYearly') PAGES.accountYearly();
+  else if(currentPage==='accountAsset') PAGES.accountAsset();
+  else PAGES.accountMonth();
+}
 let clockTimer = null;
 let greetingCache = { date:'', text:'' };
 
@@ -219,18 +284,40 @@ function init(){
 
 /* ----------------------------- 导航渲染 ----------------------------- */
 function renderNav(){
-  $('#nav').innerHTML = NAV.map(n =>
-    `<div class="nav-item" data-page="${n.key}">${icon(n.icon)}<span>${n.label}</span></div>`
-  ).join('');
+  let html = '';
+  NAV.forEach(n=>{
+    html += `<div class="nav-item" data-page="${n.key}">${icon(n.icon)}<span>${n.label}</span></div>`;
+    if(n.children) html += '<div class="subnav">'+ n.children.map(c=>
+      `<div class="subnav-item" data-page="${c.key}">${esc(c.label)}</div>`).join('') +'</div>';
+  });
+  $('#nav').innerHTML = html;
   $$('#nav .nav-item').forEach(el=>{
+    el.addEventListener('click', (e)=> { e.stopPropagation(); goto(el.dataset.page); });
+  });
+  $$('#nav .subnav-item').forEach(el=>{
     el.addEventListener('click', (e)=> { e.stopPropagation(); goto(el.dataset.page); });
   });
 }
 
+function navLabel(key){
+  for(const n of NAV){
+    if(n.key===key) return n.label;
+    if(n.children) for(const c of n.children) if(c.key===key) return c.label;
+  }
+  return '';
+}
 function goto(key){
+  // 父项（有 children 但自身无独立页）点击 → 展开并跳首个子项
+  const navItem = NAV.find(n=>n.key===key);
+  if(navItem && navItem.children){ key = navItem.children[0].key; }
   currentPage = key;
-  $$('#nav .nav-item').forEach(el=> el.classList.toggle('active', el.dataset.page===key));
-  $('#pageTitle').textContent = (NAV.find(n=>n.key===key)||{}).label || '';
+  const parentKey = (NAV.find(n=>n.children && n.children.some(c=>c.key===key))||{}).key;
+  $$('#nav .nav-item').forEach(el=>{
+    el.classList.toggle('active', el.dataset.page===key || el.dataset.page===parentKey);
+    el.classList.toggle('open', el.dataset.page===parentKey);
+  });
+  $$('#nav .subnav-item').forEach(el=> el.classList.toggle('active', el.dataset.page===key));
+  $('#pageTitle').textContent = navLabel(key) || (NAV.find(n=>n.key===key)||{}).label || '';
   if(clockTimer){ clearInterval(clockTimer); clockTimer=null; }
   $('.sidebar') && $('#sidebar').classList.remove('open');
   if(!$('#modalRoot').classList.contains('show')) $('#overlay').classList.remove('show');
@@ -239,7 +326,7 @@ function goto(key){
 
 /* 打开页（含密码守卫） */
 function openPage(key){
-  const needPwd = (key==='quota' && State.settings.quotaPwd) || (key==='account' && State.settings.accountPwd);
+  const needPwd = (key==='quota' && State.settings.quotaPwd) || (key.startsWith('account') && State.settings.accountPwd);
   if(needPwd){
     promptPassword(key, ()=> renderPage(key));
   } else {
@@ -320,10 +407,11 @@ function openPwdSettings(key){
     { key:'pwd2', label:'确认新密码', type:'password', placeholder:'再次输入' }
   ], (d)=>{
     if(cur && d.old !== cur){ toast('当前密码不正确','bad'); return; }
-    if(d.mode==='clear'){ setPwd(key,''); toast('已清除密码'); renderPage(key); return; }
+    const back = PAGES[key] ? key : currentPage;   // 'account' 已拆成三个二级页，回到当前页
+    if(d.mode==='clear'){ setPwd(key,''); toast('已清除密码'); renderPage(back); return; }
     if(d.pwd.length < 4){ toast('密码至少4位','bad'); return; }
     if(d.pwd !== d.pwd2){ toast('两次输入不一致','bad'); return; }
-    setPwd(key, d.pwd); toast('密码已保存'); renderPage(key);
+    setPwd(key, d.pwd); toast('密码已保存'); renderPage(back);
   });
 }
 function setPwd(key, val){
@@ -374,7 +462,9 @@ function exportData(){
   const data = {
     _app:'日富一日·钱途光明', _exportedAt: nowStr(),
     tasks:State.tasks, notes:State.notes, quotas:State.quotas,
-    accounts:State.accounts, assets:State.assets, rec:State.rec, settings:State.settings
+    accounts:State.accounts, assets:State.assets, rec:State.rec, settings:State.settings,
+    budgets:State.budgets, recurring:State.recurring,
+    checkins:State.checkins, checkinItems:State.checkinItems
   };
   const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
@@ -400,7 +490,12 @@ function importData(e){
         State.assets   = d.assets   || [];
         State.rec      = d.rec      || State.rec;
         State.settings = Object.assign(State.settings, d.settings || {});
+        if(d.budgets)      State.budgets      = d.budgets;
+        if(d.recurring)    State.recurring    = d.recurring;
+        if(d.checkins)     State.checkins     = d.checkins;
+        if(d.checkinItems) State.checkinItems = d.checkinItems;
         save('tasks'); save('notes'); save('quotas'); save('accounts'); save('assets'); save('rec'); saveSettings();
+        save('budgets'); save('recurring'); save('checkins'); save('checkinItems');
         updateAvatar(); applyTheme(); checkExportReminder();
         toast('导入成功','good'); renderPage(currentPage);
       });
@@ -508,12 +603,12 @@ function toggleBatch(page){
   if(!batch[page]) batch[page] = { on:false, sel:new Set() };
   batch[page].on = !batch[page].on;
   if(!batch[page].on) batch[page].sel.clear();
-  renderPage(page);
+  renderPage(PAGES[page] ? page : currentPage);   // 账本共用 batch key 'account'，需按当前二级页重绘
 }
 function toggleSel(page, id){
   if(!batch[page]) batch[page] = { on:false, sel:new Set() };
   if(batch[page].sel.has(id)) batch[page].sel.delete(id); else batch[page].sel.add(id);
-  renderPage(page);
+  renderPage(PAGES[page] ? page : currentPage);
 }
 
 /* =============================================================================
@@ -1181,159 +1276,70 @@ const ACCOUNT_CATS = [
   {key:'娱乐',icon:'🎮'}, {key:'居家',icon:'🏠'}, {key:'医疗',icon:'💊'}, {key:'工资',icon:'💰'},
   {key:'红包',icon:'🧧'}, {key:'其他',icon:'📦'}
 ];
-PAGES.account = function(){
-  if(!filters.account) filters.account = { q:'', type:'all', cat:'all' };
-  const f = filters.account;
-  let list = State.accounts.slice().sort((a,b)=> b.created - a.created);
-  if(f.type!=='all') list = list.filter(t=> t.type===f.type);
-  if(f.cat!=='all') list = list.filter(t=> t.cat===f.cat);
-  if(f.q) list = list.filter(t=> (t.note||'').toLowerCase().includes(f.q.toLowerCase()) || t.cat.includes(f.q));
-  const b = batch.account || {on:false,sel:new Set()};
-
-  // 本月概览
-  const m = monthStr();
-  const monthTx = State.accounts.filter(t=> (t.date||'').slice(0,7)===m);
+PAGES.accountMonth = function(){
+  const ym = acctYM();
+  const monthTx = State.accounts.filter(t=> (t.date||'').slice(0,7)===ym && t.source!=='yearly-backfill');
   const exp = monthTx.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
   const inc = monthTx.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+  const [cy, cm] = ym.split('-');
+  const isCur = ym===monthStr();
 
   let html = '<div class="page">';
-  html += '<div class="card"><div class="card-title">'+icon('account')+'我的账本'+
+  html += '<div class="card"><div class="card-title">'+icon('account')+'本月账单'+
     '<span style="flex:1"></span><button class="btn btn-sm" data-action="pwdSet">🔐 '+(State.settings.accountPwd?'已加密':'未加密')+'</button></div>';
+  html += '<div class="month-switch">'+
+    '<button class="btn btn-sm btn-soft" data-action="prevMonth">‹ 上月</button>'+
+    '<div class="month-title">'+cy+' 年 '+parseInt(cm,10)+' 月'+(isCur?'<span class="mcur">本月</span>':'')+'</div>'+
+    '<button class="btn btn-sm btn-soft" data-action="nextMonth">下月 ›</button>'+
+    '</div>';
   html += '<div class="stat-row">'+
-    '<div class="stat expense"><div class="label">本月支出</div><div class="val">'+fmt(exp)+'</div></div>'+
-    '<div class="stat income"><div class="label">本月收入</div><div class="val">'+fmt(inc)+'</div></div>'+
-    '<div class="stat"><div class="label">本月结余</div><div class="val">'+fmt(inc-exp)+'</div></div>'+
-    '</div></div>';
+    '<div class="stat income"><div class="label">收入</div><div class="val">'+fmt(inc)+'</div></div>'+
+    '<div class="stat expense"><div class="label">支出</div><div class="val">'+fmt(exp)+'</div></div>'+
+    '<div class="stat'+((inc-exp)<0?' expense':'')+'"><div class="label">剩余</div><div class="val">'+fmt(inc-exp)+'</div></div>'+
+    '</div>';
+  if(!isCur) html += '<div style="text-align:center;margin-top:10px"><button class="btn btn-sm btn-primary" data-action="backToCur">↩ 回到本月</button></div>';
+  html += '</div>';
 
-  /* ---- 月度预算（按分类限额 + 超支警告） ---- */
-  const yyyyMM = curYM();
-  const prog = computeBudgetProgress(yyyyMM);
-  const hasBudget = prog.length>0;
+  // 快捷记一笔
+  html += '<div class="card"><div class="card-title">⚡ 快速记一笔<span style="flex:1"></span><button class="btn btn-sm btn-primary" data-action="smartAdd">➕ 智能输入</button></div><div class="quick-grid">';
+  ACCOUNT_CATS.forEach(c=>{ html += '<div class="quick" data-action="quickAdd" data-cat="'+c.key+'"><div class="q-ic">'+c.icon+'</div>'+c.key+'</div>'; });
+  html += '</div></div>';
+
+  /* ---- 总览 / 详情 切换 ---- */
+  html += '<div class="card"><div class="card-title">📋 账单视图</div>';
+  html += '<div class="ai-tabs" style="margin-bottom:12px">'+
+    '<div class="ai-tab'+(mAccountSubView==='overview'?' active':'')+'" data-action="setMView" data-v="overview">总览</div>'+
+    '<div class="ai-tab'+(mAccountSubView==='detail'?' active':'')+'" data-action="setMView" data-v="detail">详情</div>'+
+    '</div>';
+  html += (mAccountSubView==='overview') ? renderMonthOverview(ym) : renderAccountDetail(ym);
+  html += '</div>';
+
+  /* ---- 月预算（按分类限额 + 超支警告） ---- */
+  const prog = computeBudgetProgress(ym);
   const overList = prog.filter(p=> p.over>0);
-  html += '<div class="card"><div class="card-title">📊 '+(yyyyMM)+' 月预算'+
+  html += '<div class="card"><div class="card-title">📊 月预算 <span class="mc-title-inline">'+ym+'</span>'+
     '<span style="flex:1"></span><button class="btn btn-sm" data-action="openBudget">⚙️ 设置</button></div>';
-  if(!hasBudget){
-    html += '<div class="empty" style="padding:14px">还没有设置月度预算，点右上「⚙️ 设置」按分类设定本月限额</div>';
+  if(prog.length===0){
+    html += '<div class="empty" style="padding:14px">还没有设置本月预算，点右上「⚙️ 设置」按分类设定限额</div>';
   } else {
-    // 顶部一句话警告
     if(overList.length>0){
-      const warnTxt = overList.map(p=> p.cat+' 超 '+fmt(p.over)).join(' · ');
-      html += '<div class="budget-warn">⚠️ '+esc(warnTxt)+'</div>';
+      html += '<div class="budget-warn">⚠️ '+esc(overList.map(p=> p.cat+' 超 '+fmt(p.over)).join(' · '))+'</div>';
     }
     html += '<div class="budget-list">';
     prog.forEach(p=>{
-      const pct = p.pct;
       const over = p.over>0;
       html += '<div class="budget-row'+(over?' over':'')+'">'+
         '<div class="b-name">'+esc(p.cat)+'</div>'+
         '<div class="b-num">已花 <b>'+fmt(p.used)+'</b> / <span>预算 '+fmt(p.budget)+'</span>'+(over?' <em>· 超 '+fmt(p.over)+'</em>':'')+'</div>'+
-        '<div class="bar'+(over?' warn':'')+'"><i style="width:'+pct+'%"></i></div>'+
+        '<div class="bar'+(over?' warn':'')+'"><i style="width:'+p.pct+'%"></i></div>'+
         '</div>';
     });
     html += '</div>';
   }
   html += '</div>';
 
-  /* ---- 分类占比饼图（本月） ---- */
-  html += '<div class="card"><div class="card-title">🥧 月度分类占比</div>'+renderExpenseDonut(yyyyMM)+'</div>';
-
-  // 快捷分类
-  html += '<div class="card"><div class="card-title">⚡ 快捷记一笔<span style="flex:1"></span><button class="btn btn-sm btn-primary" data-action="smartAdd">➕ 智能输入</button></div><div class="quick-grid">';
-  ACCOUNT_CATS.forEach(c=>{ html += '<div class="quick" data-action="quickAdd" data-cat="'+c.key+'"><div class="q-ic">'+c.icon+'</div>'+c.key+'</div>'; });
-  html += '</div></div>';
-
-  // 明细
-  html += '<div class="card"><div class="card-title">'+icon('account')+'收支明细</div>';
-  html += '<div class="toolbar">'+
-    '<button class="btn btn-primary btn-sm" data-action="addTx">＋ 记一笔</button>'+
-    '<button class="btn btn-sm" data-action="ocrAdd" title="拍照/选图，自动识别金额与日期（不存图）">📷 图片记账</button>'+
-    '<button class="btn btn-sm" data-action="batchToggle">批量操作</button>'+
-    (b.on ? '<button class="btn btn-danger btn-sm" data-action="batchDel">删除选中 ('+b.sel.size+')</button>' : '')+
-    '</div>';
-  html += '<div class="search">'+
-    '<input class="input" id="accQ" placeholder="搜索备注 / 分类…" value="'+esc(f.q)+'">'+
-    '<select class="select" id="accType"><option value="all"'+(f.type==='all'?' selected':'')+'>全部类型</option><option value="expense"'+(f.type==='expense'?' selected':'')+'>支出</option><option value="income"'+(f.type==='income'?' selected':'')+'>收入</option></select>'+
-    '<select class="select" id="accCat"><option value="all"'+(f.cat==='all'?' selected':'')+'>全部分类</option>'+ACCOUNT_CATS.map(c=>'<option value="'+c.key+'"'+(f.cat===c.key?' selected':'')+'>'+c.key+'</option>').join('')+'</select>'+
-    '</div>';
-  html += '<div class="list">';
-  if(list.length===0){ html += '<div class="empty"><div class="big">💰</div>还没有记录，点上面的分类快速记账</div>'; }
-  else {
-    list.forEach(t=>{
-      const c = ACCOUNT_CATS.find(x=>x.key===t.cat)||{icon:'📦'};
-      html += '<div class="item">';
-      if(b.on) html += '<div class="check'+(b.sel.has(t.id)?' on':'')+'" data-action="sel" data-id="'+t.id+'">'+(b.sel.has(t.id)?'✓':'')+'</div>';
-      html += '<div class="q-ic" style="width:40px;height:40px">'+c.icon+'</div>';
-      html += '<div class="body"><div class="title">'+esc(t.cat)+(t.note?' · '+esc(t.note):'')+'</div><div class="sub">'+(t.date||'')+' '+(t.time||'')+'</div></div>';
-      html += '<div class="title" style="color:'+(t.type==='income'?'var(--good)':'var(--bad)')+'">'+(t.type==='income'?'+':'-')+fmt(t.amount)+'</div>';
-      if(!b.on) html += '<button class="btn btn-danger btn-sm" data-action="delTx" data-id="'+t.id+'">删除</button>';
-      html += '</div>';
-    });
-  }
-  html += '</div></div>';
-
-  /* ---- 账本统计聚合（按年 + 今年按月） ---- */
-  const stats = computeAccountStats();
-  html += '<div class="card"><div class="card-title">📊 '+stats.curYear+' 年月度统计</div>';
-  if(stats.thisYearMonths.some(m=> m.exp>0||m.inc>0)){
-    html += '<div class="mstat-grid">';
-    stats.thisYearMonths.forEach((m,i)=>{
-      const isCur = (i===(new Date()).getMonth()); // 当前月高亮
-      const empty = (m.exp===0 && m.inc===0);
-      html += '<div class="mstat-cell'+(isCur?' on':'')+(empty?' empty':'')+'">'+
-        '<div class="mstat-m">'+m.m+'月</div>'+
-        '<div class="mstat-num">'+(m.exp>0?fmt(-m.exp):'—')+'</div>'+
-        '<div class="mstat-sub">收 '+(m.inc>0?fmt(m.inc):'—')+'</div>'+
-        '</div>';
-    });
-    html += '</div>';
-    html += '<div class="mstat-legend">支出（红）· 收入（绿）· 当前月高亮</div>';
-  } else {
-    html += '<div class="empty" style="padding:14px">'+stats.curYear+' 年还没有账目记录，记账后这里会出现月度统计</div>';
-  }
-  html += '</div>';
-
-  html += '<div class="card"><div class="card-title">📅 年度统计</div>';
-  if(stats.years.length===0){
-    html += '<div class="empty" style="padding:14px">还没有任何账目记录，从顶部记一笔开始吧</div>';
-  } else {
-    html += '<div class="ystat-list">';
-    stats.years.forEach(y=>{
-      const balance = y.inc - y.exp;
-      html += '<div class="ystat-row">'+
-        '<div class="ystat-y">'+y.year+' 年</div>'+
-        '<div class="ystat-e">支 '+fmt(y.exp)+'</div>'+
-        '<div class="ystat-i">收 '+fmt(y.inc)+'</div>'+
-        '<div class="ystat-b'+(balance<0?' neg':'')+'">结余 '+fmt(balance)+'</div>'+
-        '</div>';
-    });
-    html += '</div>';
-  }
-  html += '</div>';
-
-  // 资产管家（放最后）
-  const totalAsset = State.assets.reduce((s,a)=>s+(a.balance||0),0);
-  html += '<div class="card"><div class="card-title">🏦 资产管家'+
-    '<span style="flex:1"></span><span class="badge" style="background:rgba(54,179,126,.12);color:var(--good)">总资产 '+fmt(totalAsset)+'</span>'+
-    '</div>';
-  html += '<div class="toolbar">'+
-    '<button class="btn btn-primary btn-sm" data-action="addAsset">＋ 添加银行卡</button>'+
-    '</div>';
-  if(State.assets.length===0){
-    html += '<div class="empty"><div class="big">🏦</div>还没有记录，添加你的资产吧</div>';
-  } else {
-    html += '<div class="list">';
-    State.assets.forEach(a=>{
-      html += '<div class="item">'+
-        '<div class="q-ic" style="width:40px;height:40px">'+(a.icon||'💳')+'</div>'+
-        '<div class="body"><div class="title">'+esc(a.name)+'</div><div class="sub">'+esc(a.bank||'')+' · 更新于 '+(a.updated||'')+'</div></div>'+
-        '<div class="title" style="color:var(--primary)">'+fmt(a.balance)+'</div>'+
-        '<button class="btn btn-sm" data-action="editAsset" data-id="'+a.id+'">编辑</button>'+
-        '<button class="btn btn-danger btn-sm" data-action="delAsset" data-id="'+a.id+'">删除</button>'+
-        '</div>';
-    });
-    html += '</div>';
-  }
-  html += '</div></div></div>';
+  /* ---- 月度分类占比（饼图） ---- */
+  html += '<div class="card"><div class="card-title">🥧 月度分类</div>'+renderExpenseDonut(ym)+'</div>';
 
   /* ---- 固定收支（周期入账） ---- */
   html += '<div class="card"><div class="card-title">📅 固定收支'+
@@ -1359,85 +1365,487 @@ PAGES.account = function(){
   html += '</div></div>';
 
   $('#content').innerHTML = html;
-  $('#accQ').addEventListener('input', e=>{ filters.account.q=e.target.value; PAGES.account(); const i=$('#accQ'); if(i){ i.focus(); i.setSelectionRange(i.value.length,i.value.length); } });
-  $('#accType').addEventListener('change', e=>{ filters.account.type=e.target.value; PAGES.account(); });
-  $('#accCat').addEventListener('change', e=>{ filters.account.cat=e.target.value; PAGES.account(); });
 };
+
+/* ---- 本月账单：总览（日格子，点开看当日流水） ---- */
+function renderMonthOverview(ym){
+  const y = parseInt(ym.slice(0,4),10), m = parseInt(ym.slice(5,7),10);
+  const byDay = {};
+  State.accounts.forEach(t=>{
+    if(t.source==='yearly-backfill') return;
+    if((t.date||'').slice(0,7)!==ym) return;
+    const d = t.date;
+    if(!byDay[d]) byDay[d] = { inc:0, exp:0, n:0 };
+    if(t.type==='income') byDay[d].inc += t.amount; else byDay[d].exp += t.amount;
+    byDay[d].n++;
+  });
+  const expList = Object.keys(byDay).map(k=> byDay[k].exp).filter(v=> v>0);
+  const maxExp = expList.length ? Math.max.apply(null, expList) : 0;
+  const todayD = todayStr();
+  const firstDow = new Date(y, m-1, 1).getDay();
+  const lastDay  = new Date(y, m, 0).getDate();
+
+  let html = '<div class="mc-weekrow"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>';
+  html += '<div class="mc-grid">';
+  for(let i=0;i<firstDow;i++) html += '<div class="mc-day mc-blank"></div>';
+  for(let day=1; day<=lastDay; day++){
+    const ds = y+'-'+pad(m)+'-'+pad(day);
+    const v = byDay[ds];
+    const isToday  = ds===todayD;
+    const isFuture = ds>todayD;
+    let cls = 'mc-day acct-day';
+    if(isToday) cls += ' mc-today';
+    if(v){
+      const r = maxExp>0 ? v.exp/maxExp : 0;
+      cls += r>=0.66 ? ' acct-h3' : r>=0.33 ? ' acct-h2' : r>0 ? ' acct-h1' : ' acct-h0';
+    } else if(isFuture) cls += ' mc-future';
+    else cls += ' mc-empty';
+    html += '<div class="'+cls+'"'+(v?' data-action="openAcctDay" data-day="'+ds+'"':'')+'>';
+    html += '<div class="mc-num">'+day+'</div>';
+    if(v){
+      const net = Math.round((v.inc - v.exp)*100)/100;
+      html += '<div class="acct-net'+(net<0?' neg':(net>0?' pos':''))+'">'+shortAmt(net)+'</div>';
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+  html += '<div class="mstat-legend">格内为当日净收支（收入−支出）· 颜色越深当日支出越高 · 点格看当日明细</div>';
+  return html;
+}
+function shortAmt(n){
+  if(n===0) return '0';
+  return (n<0?'-':'+')+shortNum(n);
+}
+/* 点开某日：当日流水弹窗 */
+function openAcctDay(ds){
+  const list = State.accounts.filter(t=> t.date===ds && t.source!=='yearly-backfill')
+    .sort((a,b)=> (b.created||0)-(a.created||0));
+  const inc = list.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+  const exp = list.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
+  let html = '<div class="day-stat">收 <b style="color:var(--good)">'+fmt(inc)+'</b> · 支 <b style="color:var(--bad)">'+fmt(exp)+'</b> · 净 <b>'+fmt(inc-exp)+'</b></div>';
+  if(list.length===0){
+    html += '<div class="day-empty">当日没有账目</div>';
+  } else {
+    html += '<div class="day-section">';
+    list.forEach(t=>{
+      const c = ACCOUNT_CATS.find(x=>x.key===t.cat)||{icon:'📦'};
+      const a = t.accountId ? (State.assets.find(x=>x.id===t.accountId)||{}).name : '';
+      html += '<div class="day-row">'+
+        '<span class="day-row-text">'+c.icon+' '+esc(t.cat)+(t.note?' · '+esc(t.note):'')+(a?' <span class="badge">'+esc(a)+'</span>':'')+'</span>'+
+        '<b style="float:right;color:'+(t.type==='income'?'var(--good)':'var(--bad)')+'">'+(t.type==='income'?'+':'-')+fmt(t.amount)+'</b>'+
+        '</div>';
+    });
+    html += '</div>';
+  }
+  const body = '<h3>'+ds+' 当日流水</h3>'+html+
+    '<div class="modal-actions"><button class="btn btn-primary" data-x="close">关闭</button></div>';
+  openModal(body);
+  $('#modalRoot').querySelector('[data-x="close"]').onclick = closeModal;
+}
+
+/* ---- 本月账单：详情（按日分组，日期由新到旧） ---- */
+function renderAccountDetail(ym){
+  if(!batch.account) batch.account = { on:false, sel:new Set() };
+  const b = batch.account;
+  const list = State.accounts.filter(t=> (t.date||'').slice(0,7)===ym && t.source!=='yearly-backfill')
+    .sort((x,y2)=> x.date===y2.date ? (y2.created||0)-(x.created||0) : (x.date<y2.date?1:-1));
+
+  let html = '<div class="toolbar">'+
+    '<button class="btn btn-primary btn-sm" data-action="addTx">＋ 记一笔</button>'+
+    '<button class="btn btn-sm" data-action="ocrAdd" title="拍照/选图，自动识别金额与日期（不存图）">📷 图片记账</button>'+
+    '<button class="btn btn-sm'+(b.on?' btn-primary':'')+'" data-action="batchToggle">'+(b.on?'退出批量':'批量')+'</button>'+
+    (b.on ? '<button class="btn btn-danger btn-sm" data-action="batchDel">删除选中 ('+b.sel.size+')</button>' : '')+
+    '</div>';
+
+  if(list.length===0){
+    html += '<div class="empty"><div class="big">💰</div>本月还没有记录，点上面「记一笔」或用快速分类记账</div>';
+    return html;
+  }
+  // 按日分组
+  const days = [];
+  const map = {};
+  list.forEach(t=>{ if(!map[t.date]){ map[t.date]=[]; days.push(t.date); } map[t.date].push(t); });
+  days.forEach(d=>{
+    const arr = map[d];
+    const inc = arr.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+    const exp = arr.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
+    html += '<div class="d-grp"><span class="d-date">'+d.slice(5)+' '+dowCN(d)+(d===todayStr()?' · 今天':'')+'</span>'+
+      '<span class="d-sum">'+(inc>0?'收 '+fmt(inc)+' · ':'')+'支 '+fmt(exp)+'</span></div>';
+    html += '<div class="list" style="margin-bottom:12px">';
+    arr.forEach(t=>{
+      const c = ACCOUNT_CATS.find(x=>x.key===t.cat)||{icon:'📦'};
+      const cardName = t.accountId ? (State.assets.find(x=>x.id===t.accountId)||{}).name : '';
+      html += '<div class="item">';
+      if(b.on) html += '<div class="check'+(b.sel.has(t.id)?' on':'')+'" data-action="sel" data-id="'+t.id+'">'+(b.sel.has(t.id)?'✓':'')+'</div>';
+      html += '<div class="q-ic" style="width:40px;height:40px">'+c.icon+'</div>';
+      html += '<div class="body"><div class="title">'+esc(t.cat)+(t.note?' · '+esc(t.note):'')+'</div>'+
+        '<div class="sub">'+(t.time||'')+(cardName?' · '+esc(cardName):' · 未绑卡')+'</div></div>';
+      html += '<div class="title" style="color:'+(t.type==='income'?'var(--good)':'var(--bad)')+'">'+(t.type==='income'?'+':'-')+fmt(t.amount)+'</div>';
+      if(!b.on) html += '<div class="item-acts">'+
+        '<button class="btn btn-sm" data-action="editTx" data-id="'+t.id+'">编辑</button>'+
+        '<button class="btn btn-danger btn-sm" data-action="delTx" data-id="'+t.id+'">删除</button></div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  });
+  return html;
+}
+/* =============================================================================
+ * 我的账本 · 二级页 2：年月概况（月账单 / 年账单）
+ * =========================================================================== */
+/* 某年 12 个月的收入/支出/结余（不含年度补录笔，补录只体现在年账单） */
+function computeMonthlyStats(year){
+  const months = [];
+  for(let m=1;m<=12;m++) months.push({ m, inc:0, exp:0 });
+  let inc=0, exp=0;
+  State.accounts.forEach(t=>{
+    if(t.source==='yearly-backfill') return;
+    if(!t.date || t.date.length<7) return;
+    if(parseInt(t.date.slice(0,4),10)!==year) return;
+    const mi = parseInt(t.date.slice(5,7),10)-1;
+    if(mi<0||mi>11) return;
+    if(t.type==='income'){ months[mi].inc += t.amount; inc += t.amount; }
+    else if(t.type==='expense'){ months[mi].exp += t.amount; exp += t.amount; }
+  });
+  return { months, inc:round2(inc), exp:round2(exp), bal:round2(inc-exp), year };
+}
+/* 历年汇总（含年度补录笔） */
+function computeYearlyStats(){
+  const map = {};
+  State.accounts.forEach(t=>{
+    if(!t.date || t.date.length<4) return;
+    const y = parseInt(t.date.slice(0,4),10);
+    if(isNaN(y)) return;
+    if(!map[y]) map[y] = { year:y, inc:0, exp:0, backfill:false };
+    if(t.source==='yearly-backfill') map[y].backfill = true;
+    if(t.type==='income') map[y].inc += t.amount;
+    else if(t.type==='expense') map[y].exp += t.amount;
+  });
+  const years = Object.keys(map).map(k=> map[k]).sort((a,b)=> b.year-a.year);
+  years.forEach(y=>{ y.inc=round2(y.inc); y.exp=round2(y.exp); y.bal=round2(y.inc-y.exp); });
+  const totInc = round2(years.reduce((s,y)=>s+y.inc,0));
+  const totExp = round2(years.reduce((s,y)=>s+y.exp,0));
+  return { years, totInc, totExp, totBal: round2(totInc-totExp) };
+}
+PAGES.accountYearly = function(){
+  const view = acctYearlyView;
+  let html = '<div class="page">';
+  html += '<div class="card"><div class="card-title">📈 年月概况'+
+    '<span style="flex:1"></span><span class="mc-stat-inline">数据来源：本月账单流水</span></div>';
+  html += '<div class="ai-tabs" style="margin-bottom:0">'+
+    '<div class="ai-tab'+(view==='month'?' active':'')+'" data-action="setYView" data-v="month">月账单</div>'+
+    '<div class="ai-tab'+(view==='year'?' active':'')+'" data-action="setYView" data-v="year">年账单</div>'+
+    '</div></div>';
+
+  if(view==='month'){
+    const yr = acctYear();
+    const st = computeMonthlyStats(yr);
+    html += '<div class="card">';
+    html += '<div class="month-switch">'+
+      '<button class="btn btn-sm btn-soft" data-action="prevYear">‹ '+(yr-1)+'</button>'+
+      '<div class="month-title">'+yr+' 年'+(yr===(new Date()).getFullYear()?'<span class="mcur">今年</span>':'')+'</div>'+
+      '<button class="btn btn-sm btn-soft" data-action="nextYear">'+(yr+1)+' ›</button>'+
+      '</div>';
+    html += '<div class="stat-row">'+
+      '<div class="stat income"><div class="label">年收入</div><div class="val">'+fmt(st.inc)+'</div></div>'+
+      '<div class="stat expense"><div class="label">年支出</div><div class="val">'+fmt(st.exp)+'</div></div>'+
+      '<div class="stat'+(st.bal<0?' expense':'')+'"><div class="label">年结余</div><div class="val">'+fmt(st.bal)+'</div></div>'+
+      '</div></div>';
+
+    html += '<div class="card"><div class="card-title">🗓 '+yr+' 年 · 每月明细</div>';
+    if(st.inc===0 && st.exp===0){
+      html += '<div class="empty" style="padding:14px">'+yr+' 年还没有账目记录</div>';
+    } else {
+      const curM = (yr===(new Date()).getFullYear()) ? (new Date()).getMonth()+1 : 0;
+      html += '<div class="ystat-list">';
+      st.months.forEach(m=>{
+        const bal = round2(m.inc-m.exp);
+        const empty = (m.inc===0 && m.exp===0);
+        html += '<div class="ystat-row'+(m.m===curM?' on':'')+(empty?' dim':'')+'" data-action="jumpMonth" data-ym="'+yr+'-'+pad(m.m)+'">'+
+          '<div class="ystat-y">'+m.m+' 月'+(m.m===curM?' <span class="mcur">本月</span>':'')+'</div>'+
+          '<div class="ystat-i">收 '+fmt(m.inc)+'</div>'+
+          '<div class="ystat-e">支 '+fmt(m.exp)+'</div>'+
+          '<div class="ystat-b'+(bal<0?' neg':'')+'">结余 '+fmt(bal)+'</div>'+
+          '</div>';
+      });
+      html += '</div><div class="mstat-legend">点任意月份可跳到「本月账单」查看该月明细</div>';
+    }
+    html += '</div>';
+  } else {
+    const st = computeYearlyStats();
+    html += '<div class="card"><div class="card-title">🏁 历年总计'+
+      '<span style="flex:1"></span><button class="btn btn-sm btn-primary" data-action="backfillYear">＋ 补录年度</button></div>';
+    html += '<div class="stat-row">'+
+      '<div class="stat income"><div class="label">总收入</div><div class="val">'+fmt(st.totInc)+'</div></div>'+
+      '<div class="stat expense"><div class="label">总支出</div><div class="val">'+fmt(st.totExp)+'</div></div>'+
+      '<div class="stat'+(st.totBal<0?' expense':'')+'"><div class="label">总结余</div><div class="val">'+fmt(st.totBal)+'</div></div>'+
+      '</div></div>';
+
+    html += '<div class="card"><div class="card-title">📅 各年度明细</div>';
+    if(st.years.length===0){
+      html += '<div class="empty"><div class="big">📅</div>还没有任何年份数据。往年数据可点右上「＋ 补录年度」一次性录入</div>';
+    } else {
+      html += '<div class="ystat-list">';
+      st.years.forEach(y=>{
+        html += '<div class="ystat-row" data-action="jumpYear" data-y="'+y.year+'">'+
+          '<div class="ystat-y">'+y.year+' 年'+(y.backfill?' <span class="badge">含补录</span>':'')+'</div>'+
+          '<div class="ystat-i">收 '+fmt(y.inc)+'</div>'+
+          '<div class="ystat-e">支 '+fmt(y.exp)+'</div>'+
+          '<div class="ystat-b'+(y.bal<0?' neg':'')+'">结余 '+fmt(y.bal)+'</div>'+
+          '</div>';
+      });
+      html += '</div><div class="mstat-legend">点任意年份可切到「月账单」查看该年 12 个月明细</div>';
+    }
+    html += '</div>';
+
+    // 补录记录管理
+    const bf = State.accounts.filter(t=> t.source==='yearly-backfill').sort((a,b)=> (b.date||'').localeCompare(a.date||''));
+    if(bf.length>0){
+      html += '<div class="card"><div class="card-title">🗂 补录记录<span style="flex:1"></span><span class="mc-stat-inline">'+bf.length+' 笔</span></div><div class="list">';
+      bf.forEach(t=>{
+        html += '<div class="item">'+
+          '<div class="q-ic" style="width:40px;height:40px">🗂</div>'+
+          '<div class="body"><div class="title">'+t.date.slice(0,4)+' 年补录 · '+(t.type==='income'?'收入':'支出')+'</div>'+
+          '<div class="sub">'+esc(t.note||'历史补录')+'</div></div>'+
+          '<div class="title" style="color:'+(t.type==='income'?'var(--good)':'var(--bad)')+'">'+(t.type==='income'?'+':'-')+fmt(t.amount)+'</div>'+
+          '<button class="btn btn-danger btn-sm" data-action="delBackfill" data-id="'+t.id+'">删除</button>'+
+          '</div>';
+      });
+      html += '</div></div>';
+    }
+  }
+  html += '</div>';
+  $('#content').innerHTML = html;
+};
+/* 补录年度数据：写 source:'yearly-backfill'，日期用 YYYY-12-31 */
+function openBackfillForm(){
+  const thisY = (new Date()).getFullYear();
+  formModal('＋ 补录年度数据', [
+    {key:'year',label:'年份',type:'number',value:String(thisY-1),placeholder:'例如 2025'},
+    {key:'inc',label:'年收入（可留空）',type:'number',value:'',placeholder:'0.00'},
+    {key:'exp',label:'年支出（可留空）',type:'number',value:'',placeholder:'0.00'},
+    {key:'note',label:'备注',value:'历史补录',placeholder:'选填'}
+  ], d=>{
+    const y = parseInt(d.year,10);
+    if(isNaN(y) || y<1970 || y>2200){ toast('请输入有效年份','bad'); return; }
+    const inc = parseFloat(d.inc), exp = parseFloat(d.exp);
+    const hasInc = !isNaN(inc) && inc>0, hasExp = !isNaN(exp) && exp>0;
+    if(!hasInc && !hasExp){ toast('至少填写年收入或年支出','bad'); return; }
+    const date = y+'-12-31';
+    if(hasInc) State.accounts.push({ id:uid(), type:'income', cat:'其他', amount:round2(inc),
+      note:(d.note||'历史补录')+' · '+y+'年收入', date, time:'23:59', created:Date.now(), source:'yearly-backfill', accountId:'' });
+    if(hasExp) State.accounts.push({ id:uid(), type:'expense', cat:'其他', amount:round2(exp),
+      note:(d.note||'历史补录')+' · '+y+'年支出', date, time:'23:59', created:Date.now(), source:'yearly-backfill', accountId:'' });
+    save('accounts');
+    toast(y+' 年数据已补录','good');
+    refreshAcct();
+  });
+}
+
+/* =============================================================================
+ * 我的账本 · 二级页 3：资产管家（资产卡 + 负债卡 + 默认收支卡）
+ * =========================================================================== */
+PAGES.accountAsset = function(){
+  const assets = State.assets.filter(a=> a.kind!=='liability');
+  const liabs  = State.assets.filter(a=> a.kind==='liability');
+  const totalAsset = round2(assets.reduce((s,a)=>s+(a.balance||0),0));
+  const totalLiab  = round2(liabs.reduce((s,a)=>s+Math.abs(a.balance||0),0));
+  const net = round2(totalAsset - totalLiab);
+  const dPay = findDefault('pay'), dInc = findDefault('income');
+
+  let html = '<div class="page">';
+  html += '<div class="card"><div class="card-title">🏦 资产管家'+
+    '<span style="flex:1"></span><button class="btn btn-sm" data-action="pwdSet">🔐 '+(State.settings.accountPwd?'已加密':'未加密')+'</button></div>';
+  html += '<div class="stat-row">'+
+    '<div class="stat income"><div class="label">总资产</div><div class="val">'+fmt(totalAsset)+'</div></div>'+
+    '<div class="stat expense"><div class="label">总负债</div><div class="val">'+fmt(totalLiab)+'</div></div>'+
+    '<div class="stat'+(net<0?' expense':'')+'"><div class="label">净资产</div><div class="val">'+fmt(net)+'</div></div>'+
+    '</div>';
+  html += '<div class="acct-bind">💳 默认支出：<b>'+(dPay?esc(dPay.name):'未绑定')+'</b> ｜ 💰 默认收入：<b>'+(dInc?esc(dInc.name):'未绑定')+'</b>'+
+    '<div class="acct-bind-tip">未绑定时，记账不影响任何卡片余额</div></div>';
+  html += '</div>';
+
+  html += '<div class="card"><div class="card-title">💳 我的卡片</div>';
+  html += '<div class="toolbar">'+
+    '<button class="btn btn-primary btn-sm" data-action="addAsset">＋ 资产</button>'+
+    '<button class="btn btn-sm btn-soft" data-action="addLiability">＋ 负债</button>'+
+    '</div>';
+  if(State.assets.length===0){
+    html += '<div class="empty"><div class="big">🏦</div>还没有卡片。添加资产（储蓄卡/现金/理财）或负债（信用卡/花呗/贷款）</div>';
+  } else {
+    html += '<div class="list">';
+    const order = assets.concat(liabs);
+    order.forEach(a=>{
+      const isLiab = a.kind==='liability';
+      html += '<div class="item'+(isLiab?' item-liab':'')+'">'+
+        '<div class="q-ic" style="width:40px;height:40px">'+(a.icon||(isLiab?'🧾':'💳'))+'</div>'+
+        '<div class="body"><div class="title">'+esc(a.name)+
+          (isLiab?' <span class="badge liab">负债</span>':'')+
+          (a.isDefaultPay?' <span class="badge def-pay">默认支出</span>':'')+
+          (a.isDefaultIncome?' <span class="badge def-inc">默认收入</span>':'')+
+          '</div><div class="sub">'+esc(a.bank||'—')+' · 更新于 '+(a.updated||'—')+'</div></div>'+
+        '<div class="title" style="color:'+(isLiab?'var(--bad)':'var(--primary)')+'">'+fmt(a.balance)+'</div>'+
+        '<div class="item-acts">'+
+          '<button class="btn btn-sm'+(a.isDefaultPay?' btn-primary':' btn-soft')+'" data-action="setPay" data-id="'+a.id+'" title="设为默认支出卡">💳 支</button>'+
+          '<button class="btn btn-sm'+(a.isDefaultIncome?' btn-primary':' btn-soft')+'" data-action="setInc" data-id="'+a.id+'" title="设为默认收入卡">💰 收</button>'+
+          '<button class="btn btn-sm" data-action="editAsset" data-id="'+a.id+'">编辑</button>'+
+          '<button class="btn btn-danger btn-sm" data-action="delAsset" data-id="'+a.id+'">删除</button>'+
+        '</div></div>';
+    });
+    html += '</div>';
+  }
+  html += '<div class="mstat-legend">「💳 支」「💰 收」可随时切换默认卡；负债卡余额以负数记账，支出会加深负债</div>';
+  html += '</div></div>';
+  $('#content').innerHTML = html;
+};
+
 function txForm(title, prefill, onOk){
+  const dPay = findDefault('pay'), dInc = findDefault('income');
+  const defLabel = '跟随默认卡'+(dPay||dInc ? '（支出→'+(dPay?dPay.name:'无')+' / 收入→'+(dInc?dInc.name:'无')+'）' : '（暂未设默认卡）');
+  const cardOpts = [{value:'__def__',text:defLabel},{value:'',text:'不绑卡（不影响资产）'}]
+    .concat(State.assets.map(a=>({ value:a.id, text:(a.kind==='liability'?'🧾 ':'💳 ')+a.name })));
   formModal(title, [
     {key:'type',label:'类型',type:'select',value:prefill.type||'expense',options:[{value:'expense',text:'支出'},{value:'income',text:'收入'}]},
     {key:'cat',label:'分类',type:'select',value:prefill.cat||'餐饮',options:ACCOUNT_CATS.map(c=>({value:c.key,text:c.key}))},
     {key:'amount',label:'金额',type:'number',value:prefill.amount||'',placeholder:'0.00'},
     {key:'note',label:'备注',value:prefill.note||'',placeholder:'选填'},
-    {key:'date',label:'日期',type:'text',value:prefill.date||todayStr()}
+    {key:'date',label:'日期',type:'text',value:prefill.date||todayStr()},
+    {key:'accountId',label:'归属卡片',type:'select',value:(prefill.accountId!==undefined?prefill.accountId:'__def__'),options:cardOpts}
   ], d=>{
     const amt = parseFloat(d.amount);
     if(isNaN(amt)||amt<=0){ toast('请输入有效金额','bad'); return; }
-    onOk(d, amt);
+    onOk(d, round2(amt));
   });
 }
-ACTIONS.account = {
+/* 卡片表单（资产/负债共用）。isLiab=true 时余额以负数存储 */
+function assetForm(a, isLiab){
+  const isEdit = !!a;
+  const kindLiab = isEdit ? (a.kind==='liability') : !!isLiab;
+  const title = (isEdit?'编辑':'添加')+(kindLiab?'负债':'资产')+'卡片'+(isEdit?' · '+a.name:'');
+  const balLabel = kindLiab ? '当前欠款金额（正数填写）' : '当前余额';
+  formModal(title, [
+    {key:'name',label:'卡片名称（自定义）',value:isEdit?a.name:'',placeholder:kindLiab?'例如：招行信用卡 / 花呗':'例如：工资卡 / 现金'},
+    {key:'bank',label:'机构名称',value:isEdit?(a.bank||''):'',placeholder:kindLiab?'例如：招商银行':'例如：招商银行'},
+    {key:'balance',label:balLabel,type:'number',value:isEdit?String(Math.abs(a.balance||0)):'',placeholder:'0.00'},
+    {key:'icon',label:'图标',value:isEdit?(a.icon||''):(kindLiab?'🧾':'💳'),placeholder:'emoji'},
+    {key:'isDefaultPay',label:'设为默认支出卡',type:'select',value:(isEdit&&a.isDefaultPay)?'1':'0',options:[{value:'0',text:'否'},{value:'1',text:'是'}]},
+    {key:'isDefaultIncome',label:'设为默认收入卡',type:'select',value:(isEdit&&a.isDefaultIncome)?'1':'0',options:[{value:'0',text:'否'},{value:'1',text:'是'}]}
+  ], d=>{
+    if(!d.name){ toast('请输入名称','bad'); return; }
+    const raw = parseFloat(d.balance);
+    if(isNaN(raw)){ toast('请输入有效金额','bad'); return; }
+    const bal = kindLiab ? -Math.abs(round2(raw)) : round2(raw);
+    let card;
+    if(isEdit){
+      a.name=d.name; a.bank=d.bank; a.balance=bal; a.icon=d.icon||(kindLiab?'🧾':'💳'); a.updated=nowStr();
+      card = a;
+    } else {
+      card = { id:uid(), name:d.name, bank:d.bank, balance:bal, icon:d.icon||(kindLiab?'🧾':'💳'),
+               kind: kindLiab?'liability':'asset', isDefaultPay:false, isDefaultIncome:false, updated:nowStr() };
+      State.assets.push(card);
+    }
+    if(d.isDefaultPay==='1') setDefault('pay', card.id, true); else if(card.isDefaultPay) setDefault('pay','',false);
+    if(d.isDefaultIncome==='1') setDefault('income', card.id, true); else if(card.isDefaultIncome) setDefault('income','',false);
+    save('assets'); toast(isEdit?'已更新':'已添加','good'); refreshAcct();
+  });
+}
+
+const ACCOUNT_ACTIONS = {
   pwdSet(){ openPwdSettings('account'); },
-  quickAdd(cat){ txForm('记一笔 · '+cat, {cat, type:'expense'}, (d,amt)=>{
-    State.accounts.push({id:uid(), type:d.type, cat:d.cat, amount:amt, note:d.note, date:d.date, time:nowStr(), created:Date.now()});
-    save('accounts'); toast('已记录','good'); PAGES.account();
+  /* ---- 月份 / 视图切换 ---- */
+  prevMonth(){ acctMonthCursor = shiftYM(acctYM(), -1); PAGES.accountMonth(); },
+  nextMonth(){ acctMonthCursor = shiftYM(acctYM(),  1); PAGES.accountMonth(); },
+  backToCur(){ acctMonthCursor = ''; PAGES.accountMonth(); },
+  setMView(id, el){ mAccountSubView = el.dataset.v || 'overview'; PAGES.accountMonth(); },
+  openAcctDay(id, el){ openAcctDay(el.dataset.day); },
+  /* ---- 年月概况 ---- */
+  setYView(id, el){ acctYearlyView = el.dataset.v || 'month'; PAGES.accountYearly(); },
+  prevYear(){ acctYearCursor = acctYear()-1; PAGES.accountYearly(); },
+  nextYear(){ acctYearCursor = acctYear()+1; PAGES.accountYearly(); },
+  jumpMonth(id, el){ acctMonthCursor = el.dataset.ym; goto('accountMonth'); },
+  jumpYear(id, el){ acctYearCursor = parseInt(el.dataset.y,10); acctYearlyView='month'; PAGES.accountYearly(); },
+  backfillYear(){ openBackfillForm(); },
+  delBackfill(id){ confirmDialog('删除补录', '确定删除这条年度补录数据吗？', ()=>{
+    const t = State.accounts.find(x=>x.id===id);
+    if(t) applyTxToAsset(t, -1);
+    State.accounts = State.accounts.filter(x=>x.id!==id);
+    save('accounts'); save('assets'); toast('已删除'); refreshAcct();
   }); },
-  addTx(){ txForm('记一笔', {}, (d,amt)=>{
-    State.accounts.push({id:uid(), type:d.type, cat:d.cat, amount:amt, note:d.note, date:d.date, time:nowStr(), created:Date.now()});
-    save('accounts'); toast('已记录','good'); PAGES.account();
+  /* ---- 交易 ---- */
+  quickAdd(cat, el){ const c = (el && el.dataset.cat) || cat;
+    txForm('记一笔 · '+c, {cat:c, type:'expense'}, (d,amt)=>{
+      const tx = {id:uid(), type:d.type, cat:d.cat, amount:amt, note:d.note, date:d.date, time:nowStr().slice(11,16),
+                  created:Date.now(), accountId:resolveTxCard(d), source:'normal'};
+      State.accounts.push(tx); applyTxToAsset(tx, +1);
+      save('accounts'); save('assets'); toast('已记录','good'); refreshAcct();
+    }); },
+  addTx(){ txForm('记一笔', {date:acctYM()===monthStr()?todayStr():acctYM()+'-01'}, (d,amt)=>{
+    const tx = {id:uid(), type:d.type, cat:d.cat, amount:amt, note:d.note, date:d.date, time:nowStr().slice(11,16),
+                created:Date.now(), accountId:resolveTxCard(d), source:'normal'};
+    State.accounts.push(tx); applyTxToAsset(tx, +1);
+    save('accounts'); save('assets'); toast('已记录','good'); refreshAcct();
   }); },
-  delTx(id){ confirmDialog('删除记录', '确定删除这条账目吗？', ()=>{
-    State.accounts = State.accounts.filter(x=>x.id!==id); save('accounts'); toast('已删除'); PAGES.account();
+  editTx(id){
+    const t = State.accounts.find(x=>x.id===id); if(!t) return;
+    txForm('编辑账目', {type:t.type, cat:t.cat, amount:t.amount, note:t.note, date:t.date, accountId:(t.accountId||'')}, (d,amt)=>{
+      applyTxToAsset(t, -1);                      // 先撤销旧影响
+      t.type=d.type; t.cat=d.cat; t.amount=amt; t.note=d.note; t.date=d.date;
+      t.accountId = resolveTxCard(d);
+      applyTxToAsset(t, +1);                      // 再应用新影响
+      save('accounts'); save('assets'); toast('已更新','good'); refreshAcct();
+    });
+  },
+  delTx(id){ confirmDialog('删除记录', '确定删除这条账目吗？（若已绑卡，卡片余额会同步回补）', ()=>{
+    const t = State.accounts.find(x=>x.id===id);
+    if(t) applyTxToAsset(t, -1);
+    State.accounts = State.accounts.filter(x=>x.id!==id);
+    save('accounts'); save('assets'); toast('已删除'); refreshAcct();
   }); },
   batchToggle(){ toggleBatch('account'); },
   sel(id){ toggleSel('account', id); },
   batchDel(){ const b=batch.account; if(!b||b.sel.size===0){ toast('请先选择','bad'); return; }
-    confirmDialog('批量删除', '确定删除选中的 '+b.sel.size+' 条账目吗？', ()=>{
-      State.accounts = State.accounts.filter(x=>!b.sel.has(x.id)); save('accounts'); b.sel.clear(); b.on=false; toast('已删除'); PAGES.account();
+    confirmDialog('批量删除', '确定删除选中的 '+b.sel.size+' 条账目吗？（绑卡的会同步回补余额）', ()=>{
+      State.accounts.forEach(t=>{ if(b.sel.has(t.id)) applyTxToAsset(t, -1); });
+      State.accounts = State.accounts.filter(x=>!b.sel.has(x.id));
+      save('accounts'); save('assets'); b.sel.clear(); b.on=false; toast('已删除'); refreshAcct();
     }); },
-  // --- 月度预算 ---
-  openBudget(){ openBudgetModal(); },
-  // --- 固定收支 ---
+  /* ---- 月预算 ---- */
+  openBudget(){ openBudgetModal(acctYM()); },
+  /* ---- 固定收支 ---- */
   addRecurring(){ openRecurringForm(null); },
   editRecurring(id){ const r = State.recurring.find(x=>x.id===id); if(r) openRecurringForm(r); },
   delRecurring(id){ confirmDialog('删除固定收支', '确定删除该固定收支条目吗？（已自动入账的账目不会被删除）', ()=>{
-    State.recurring = State.recurring.filter(x=>x.id!==id); save('recurring'); toast('已删除'); PAGES.account();
+    State.recurring = State.recurring.filter(x=>x.id!==id); save('recurring'); toast('已删除'); refreshAcct();
   }); },
   toggleRecurring(id){ const r = State.recurring.find(x=>x.id===id); if(!r) return;
-    r.paused = !r.paused; save('recurring'); toast(r.paused?'已暂停':'已恢复'); PAGES.account();
+    r.paused = !r.paused; save('recurring'); toast(r.paused?'已暂停':'已恢复'); refreshAcct();
   },
-  // --- 资产管家 ---
-  addAsset(){ formModal('添加银行卡', [
-    {key:'name',label:'卡片名称（自定义）',placeholder:'例如：工资卡'},
-    {key:'bank',label:'银行名称',placeholder:'例如：招商银行'},
-    {key:'balance',label:'当前余额',type:'number',placeholder:'0.00'},
-    {key:'icon',label:'图标',value:'💳',placeholder:'emoji'}
-  ], d=>{
-    if(!d.name){ toast('请输入名称','bad'); return; }
-    const bal = parseFloat(d.balance);
-    if(isNaN(bal)){ toast('请输入有效余额','bad'); return; }
-    State.assets.push({id:uid(), name:d.name, bank:d.bank, balance:bal, icon:d.icon||'💳', updated:nowStr()});
-    save('assets'); toast('已添加','good'); PAGES.account();
-  }); },
-  editAsset(id){ const a = State.assets.find(x=>x.id===id); if(!a) return;
-    formModal('编辑银行卡 · '+a.name, [
-      {key:'name',label:'卡片名称',value:a.name},
-      {key:'bank',label:'银行名称',value:a.bank},
-      {key:'balance',label:'当前余额',type:'number',value:String(a.balance)},
-      {key:'icon',label:'图标',value:a.icon}
-    ], d=>{
-      if(!d.name){ toast('请输入名称','bad'); return; }
-      const bal = parseFloat(d.balance);
-      if(isNaN(bal)){ toast('请输入有效余额','bad'); return; }
-      a.name=d.name; a.bank=d.bank; a.balance=bal; a.icon=d.icon||'💳'; a.updated=nowStr();
-      save('assets'); toast('已更新','good'); PAGES.account();
+  /* ---- 资产管家 ---- */
+  addAsset(){ assetForm(null, false); },
+  addLiability(){ assetForm(null, true); },
+  editAsset(id){ const a = State.assets.find(x=>x.id===id); if(a) assetForm(a); },
+  setPay(id){ const a = State.assets.find(x=>x.id===id); if(!a) return;
+    const on = !a.isDefaultPay; setDefault('pay', id, on);
+    save('assets'); toast(on?('默认支出卡 → '+a.name):'已取消默认支出卡','good'); refreshAcct();
+  },
+  setInc(id){ const a = State.assets.find(x=>x.id===id); if(!a) return;
+    const on = !a.isDefaultIncome; setDefault('income', id, on);
+    save('assets'); toast(on?('默认收入卡 → '+a.name):'已取消默认收入卡','good'); refreshAcct();
+  },
+  delAsset(id){ const a = State.assets.find(x=>x.id===id); if(!a) return;
+    const bound = State.accounts.filter(t=> t.accountId===id).length;
+    const extra = (a.isDefaultPay||a.isDefaultIncome) ? '该卡是默认卡，删除后将自动解绑。' : '';
+    confirmDialog('删除卡片', '确定删除「'+a.name+'」吗？'+extra+(bound>0?('已有 '+bound+' 笔账目绑定此卡，账目会保留但不再联动余额。'):''), ()=>{
+      State.assets = State.assets.filter(x=>x.id!==id);
+      save('assets'); toast('已删除'); refreshAcct();
     }); },
-  delAsset(id){ confirmDialog('删除银行卡', '确定删除该银行卡记录吗？', ()=>{
-    State.assets = State.assets.filter(x=>x.id!==id); save('assets'); toast('已删除'); PAGES.account();
-  }); },
   smartAdd(){ openSmartModal(); },
   ocrAdd(){ startOcrImport(); }
 };
+ACTIONS.account       = ACCOUNT_ACTIONS;  // 兼容旧 key
+ACTIONS.accountMonth  = ACCOUNT_ACTIONS;
+ACTIONS.accountYearly = ACCOUNT_ACTIONS;
+ACTIONS.accountAsset  = ACCOUNT_ACTIONS;
 
 /* =============================================================================
  * 自然语言记账解析引擎（智能输入）
@@ -1497,8 +1905,8 @@ function computeBudgetProgress(yyyyMM){
   }).sort((a,b)=> b.used-a.used);
 }
 // 打开预算管理弹窗：逐分类设置金额
-function openBudgetModal(){
-  const yyyyMM = curYM();
+function openBudgetModal(ym){
+  const yyyyMM = ym || curYM();
   if(!State.budgets[yyyyMM]) State.budgets[yyyyMM] = {};
   const cur = State.budgets[yyyyMM];
   const fields = ACCOUNT_CATS.map(c=>({
@@ -1516,7 +1924,7 @@ function openBudgetModal(){
     State.budgets[yyyyMM] = cur;
     save('budgets');
     toast('预算已保存','good');
-    PAGES.account();
+    refreshAcct();
   });
 }
 
@@ -1572,15 +1980,19 @@ function addRecurringToday(today){
   let added = 0;
   State.recurring.forEach(r=>{
     if(!shouldAddRecurring(r, today)) return;
-    State.accounts.unshift({
-      id: uid(), type:r.type, cat:r.cat, amount:r.amount,
+    const dc = findDefault(r.type==='income' ? 'income' : 'pay');
+    const tx = {
+      id: uid(), type:r.type, cat:r.cat, amount:round2(r.amount),
       note:(r.note?r.note:'')+' · [固定]', date:today, time: nowStr().slice(11,16),
-      created: Date.now(), recurringId:r.id
-    });
+      created: Date.now(), recurringId:r.id, source:'recurring',
+      accountId: dc ? dc.id : ''
+    };
+    State.accounts.unshift(tx);
+    applyTxToAsset(tx, +1);
     r.lastAdded = today;
     added++;
   });
-  if(added>0) save('recurring');
+  if(added>0){ save('recurring'); save('assets'); }
   return added;
 }
 function openRecurringForm(r){
@@ -1618,7 +2030,7 @@ function openRecurringForm(r){
     }
     save('recurring');
     toast(isEdit?'已更新':'已新增','good');
-    PAGES.account();
+    refreshAcct();
   });
 }
 
@@ -1772,8 +2184,13 @@ function openSmartModal(prefill){
   $('#modalRoot').querySelector('[data-x="cancel"]').onclick = closeModal;
   $('#modalRoot').querySelector('[data-x="ok"]').onclick = ()=>{
     if(parsed.length===0){ toast('没有可解析的记录','bad'); return; }
-    parsed.forEach(r=> State.accounts.push({id:uid(), type:r.type, cat:r.cat, amount:r.amount, note:r.note, date:r.date, time:nowStr(), created:Date.now()}));
-    save('accounts'); closeModal(); toast('已录入 '+parsed.length+' 笔','good'); PAGES.account();
+    parsed.forEach(r=>{
+      const dc = findDefault(r.type==='income' ? 'income' : 'pay');
+      const tx = {id:uid(), type:r.type, cat:r.cat, amount:round2(r.amount), note:r.note, date:r.date,
+                  time:nowStr().slice(11,16), created:Date.now(), source:'normal', accountId: dc?dc.id:''};
+      State.accounts.push(tx); applyTxToAsset(tx, +1);
+    });
+    save('accounts'); save('assets'); closeModal(); toast('已录入 '+parsed.length+' 笔','good'); refreshAcct();
   };
 }
 
