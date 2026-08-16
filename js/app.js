@@ -980,6 +980,7 @@ PAGES.quota = function(){
       if(!b.on){
         if(view==='active'){
           html += '<div class="item-acts">'+
+            '<button class="btn btn-sm" data-action="useQuota" data-id="'+q.id+'">记录</button>'+
             '<button class="btn btn-sm" data-action="openQuotaDetail" data-id="'+q.id+'">明细</button>'+
             '<button class="btn btn-sm" data-action="archiveQuota" data-id="'+q.id+'" title="归档：从主页隐藏，进「已归档」查看">📦 归档</button>'+
             '<button class="btn btn-sm" data-action="delQuota" data-id="'+q.id+'">删除</button>';
@@ -1079,9 +1080,6 @@ function renderQuotaDetail(q){
     '<button class="btn btn-sm btn-soft" data-action="renameQuota" data-id="'+q.id+'" title="修改名称">✏️ 更名</button>'+
     '<span class="spacer" style="flex:1"></span>'+
     '<button class="btn btn-sm" data-action="quotaBack">‹ 返回</button></div>';
-  html += '<div class="toolbar">'+
-    '<button class="btn btn-primary btn-sm" data-action="useQuota" data-id="'+q.id+'">＋ 记录消耗</button>'+
-    '</div>';
   html += '<div class="stat-row">'+
     '<div class="stat"><div class="label">剩余额度</div><div class="val">'+fmt(remaining)+'</div></div>'+
     '<div class="stat"><div class="label">已消耗</div><div class="val">'+fmt(q.consumed)+'</div></div>'+
