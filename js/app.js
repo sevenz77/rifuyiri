@@ -458,6 +458,46 @@ function __onDragUp(){
   __drag = null;
 }
 
+/* ---- 额度拖拽：整行自由重排（PointerEvent 兼容手机，不分 kind 桶） ---- */
+let __qDrag = null;
+function bindQuotaDrag(){
+  $$('#content .quota-drag-handle').forEach(h=>{
+    h.addEventListener('pointerdown', e=>{
+      const item = h.closest('.quota-item');
+      if(!item || !item.dataset.id) return;
+      e.preventDefault();
+      __qDrag = { item, sx:e.clientX, sy:e.clientY, moved:false };
+      window.addEventListener('pointermove', __onQDragMove);
+      window.addEventListener('pointerup', __onQDragUp);
+    });
+  });
+}
+function __onQDragMove(e){
+  if(!__qDrag) return;
+  const dx = Math.abs(e.clientX-__qDrag.sx), dy = Math.abs(e.clientY-__qDrag.sy);
+  if(!__qDrag.moved){ if(dx+dy < 6) return; __qDrag.moved = true; __qDrag.item.classList.add('dragging'); }
+  const sibs = [...$$( '#content .quota-item' )].filter(x=> x!==__qDrag.item);
+  let target = null;
+  for(const s of sibs){ const r = s.getBoundingClientRect(); if(e.clientY < r.top + r.height/2){ target = s; break; } }
+  const parent = __qDrag.item.parentNode;
+  if(target) parent.insertBefore(__qDrag.item, target); else parent.appendChild(__qDrag.item);
+}
+function __onQDragUp(){
+  if(!__qDrag) return;
+  window.removeEventListener('pointermove', __onQDragMove);
+  window.removeEventListener('pointerup', __onQDragUp);
+  if(__qDrag.moved){
+    __qDrag.item.classList.remove('dragging');
+    const ids = [...$$( '#content .quota-item' )].map(x=> x.dataset.id);
+    const orderMap = {}; ids.forEach((id, idx)=> orderMap[id] = idx);
+    State.quotas.sort((a,b)=> (orderMap[a.id]??1e9) - (orderMap[b.id]??1e9));
+    save('quotas');
+    window.__justDragged = true;
+    PAGES.quota();
+  }
+  __qDrag = null;
+}
+
 /* 通用：批量选择切换 */
 function toggleBatch(page){
   if(!batch[page]) batch[page] = { on:false, sel:new Set() };
@@ -928,8 +968,8 @@ PAGES.quota = function(){
       const used = Math.min(q.consumed, q.total);
       const pct = q.total>0 ? Math.round(used/q.total*100) : 0;
       const warn = pct>=85;
-      const realIdx = State.quotas.findIndex(x=>x.id===q.id);
-      html += '<div class="item quota-item'+(q.archived?' archived':'')+'">';
+      const canDrag = (view==='active') && !b.on && !f.q;
+      html += '<div class="item quota-item'+(q.archived?' archived':'')+(canDrag?' draggable':'')+'" data-id="'+q.id+'">';
       if(b.on && view==='active') html += '<div class="check'+(b.sel.has(q.id)?' on':'')+'" data-action="sel" data-id="'+q.id+'">'+(b.sel.has(q.id)?'✓':'')+'</div>';
       const openAttr = (b.on || view==='archived') ? '' : ' data-action="openQuotaDetail" data-id="'+q.id+'"';
       const arrow = (b.on || view==='archived') ? '' : '<span class="arrow">›</span>';
@@ -940,29 +980,28 @@ PAGES.quota = function(){
       if(!b.on){
         if(view==='active'){
           html += '<div class="item-acts">'+
+            '<button class="btn btn-sm" data-action="renameQuota" data-id="'+q.id+'">改名</button>'+
             '<button class="btn btn-sm" data-action="useQuota" data-id="'+q.id+'">记录消耗</button>'+
-            '<button class="btn btn-sm btn-ghost" data-action="archiveQuota" data-id="'+q.id+'" title="归档：从主页隐藏，进「已归档」查看">📦 归档</button>'+
-            '<button class="btn btn-danger btn-sm" data-action="delQuota" data-id="'+q.id+'">删除</button>';
-          if(!f.q){
-            if(realIdx>0) html += '<button class="btn btn-sm btn-ghost" data-action="moveQuota" data-id="'+q.id+'" data-dir="up">↑ 上移</button>';
-            if(realIdx<State.quotas.length-1) html += '<button class="btn btn-sm btn-ghost" data-action="moveQuota" data-id="'+q.id+'" data-dir="down">↓ 下移</button>';
-          }
+            '<button class="btn btn-sm" data-action="archiveQuota" data-id="'+q.id+'" title="归档：从主页隐藏，进「已归档」查看">📦 归档</button>'+
+            '<button class="btn btn-sm" data-action="delQuota" data-id="'+q.id+'">删除</button>';
           html += '</div>';
         } else {
           // 归档视图：恢复 + 删除（不动 lock 字段，密码设置在 toolbar 里仍然生效）
           html += '<div class="item-acts">'+
-            '<button class="btn btn-sm btn-primary" data-action="unarchiveQuota" data-id="'+q.id+'" title="恢复到主页追踪">♻️ 恢复</button>'+
-            '<button class="btn btn-danger btn-sm" data-action="delQuota" data-id="'+q.id+'">🗑️ 删除</button>'+
+            '<button class="btn btn-sm" data-action="unarchiveQuota" data-id="'+q.id+'" title="恢复到主页追踪">♻️ 恢复</button>'+
+            '<button class="btn btn-sm" data-action="delQuota" data-id="'+q.id+'">🗑️ 删除</button>'+
             '</div>';
         }
       }
       html += '</div>';
+      if(canDrag) html += '<div class="quota-drag-handle" title="拖动排序">⠿</div>';
       html += '</div>';
     });
   }
   html += '</div></div></div>';
   $('#content').innerHTML = html;
   $('#quotaQ').addEventListener('input', e=>{ filters.quota.q=e.target.value; PAGES.quota(); });
+  if(!b.on && view==='active') bindQuotaDrag();
 };
 ACTIONS.quota = {
   pwdSet(){ openPwdSettings('quota'); },
@@ -1013,13 +1052,14 @@ ACTIONS.quota = {
     }); },
   openQuotaDetail(id){ qDetailId = id; PAGES.quota(); },
   quotaBack(){ qDetailId = null; PAGES.quota(); },
-  moveQuota(id, el){
-    const dir = el.dataset.dir==='up' ? -1 : 1;
-    const i = State.quotas.findIndex(x=>x.id===id);
-    const j = i + dir;
-    if(i<0 || j<0 || j>=State.quotas.length) return;
-    const t = State.quotas[i]; State.quotas[i] = State.quotas[j]; State.quotas[j] = t;
-    save('quotas'); PAGES.quota();
+  renameQuota(id){ const q = State.quotas.find(x=>x.id===id); if(!q) return;
+    formModal('改名 · '+q.name, [
+      {key:'name',label:'新名称',placeholder:'新的额度名称'}
+    ], d=>{
+      const v = (d.name||'').trim();
+      if(!v){ toast('名称不能为空','bad'); return; }
+      q.name = v; save('quotas'); toast('已改名','good'); PAGES.quota();
+    }, { prefill:{ name:q.name } });
   },
   delQuotaRecord(id, el){ const rid = parseInt(el.dataset.rid,10); const q = State.quotas.find(x=>x.id===id); if(!q||isNaN(rid)||!q.records[rid]) return;
     confirmDialog('删除记录', '确定删除这条消耗记录吗？该额度的已消耗将同步扣减。', ()=>{

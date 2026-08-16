@@ -513,12 +513,21 @@ body.dark .ai-tag.foreign{background:#3a2818; color:#ff9a50; border-color:#5a402
 }
 
 /* 额度项纵向布局（名称/数据/进度条/按钮 各一行） */
-.quota-item{flex-direction:column; align-items:stretch;}
+.quota-item{flex-direction:column; align-items:stretch; position:relative;}
 .quota-item.archived{opacity:.85; background:linear-gradient(180deg, var(--card2), var(--card)); border-style:dashed;}
 .quota-item.archived .bar i{background:linear-gradient(90deg, #94a3b8, #64748b);}
-.quota-item .body{width:100%; display:flex; flex-direction:column; gap:4px;}
+.quota-item .body{width:100%; display:flex; flex-direction:column; gap:4px; padding-right:24px;}
 .quota-item .item-acts{justify-content:flex-start; margin-top:6px; padding-top:8px; border-top:1px solid var(--line);}
 .quota-item > .check{align-self:flex-start; position:absolute; left:10px; top:10px;}
+.quota-item .quota-drag-handle{
+  position:absolute; right:8px; top:14px; display:none;
+  cursor:grab; touch-action:none; user-select:none;
+  color:var(--muted); font-size:18px; line-height:1; padding:4px 6px;
+  border-radius:8px; opacity:.55; transition:.15s;
+}
+.quota-item .quota-drag-handle:hover{opacity:1; background:var(--card);}
+.quota-item .quota-drag-handle:active{cursor:grabbing;}
+.quota-item.draggable .quota-drag-handle{display:block;}
 .badge.badge-archived{background:rgba(148,163,184,.18); color:#64748b; border:1px solid rgba(148,163,184,.3);}
 .toolbar .btn:disabled{opacity:.45; cursor:not-allowed;}
 .toolbar .muted{color:var(--muted);}
