@@ -648,3 +648,27 @@ body.dark .ai-tag.foreign{background:#3a2818; color:#ff9a50; border-color:#5a402
 .arrow{color:var(--muted); font-weight:400; margin-left:8px; font-size:16px;}
 .rec-item .title .sub{font-size:12px;}
 .qd-name{font-weight:800; font-size:15px;}
+
+/* =============================================================================
+ * 账本 · 快速记一笔 / 年月概况（图表查询）新增样式
+ * =========================================================================== */
+/* 分类网格：4 列（对齐参考图） */
+.qgrid4{grid-template-columns:repeat(4,1fr);}
+/* 支出 / 收入 段控 */
+.seg{display:inline-flex; gap:0; background:var(--bg); border:1px solid var(--border,#e5e7eb); border-radius:12px; padding:3px; width:100%; box-sizing:border-box;}
+.seg-btn{flex:1; text-align:center; padding:8px 0; border-radius:9px; font-weight:700; color:var(--muted); cursor:pointer; transition:.14s; font-size:13.5px; user-select:none;}
+.seg-btn.active{background:var(--primary); color:#fff; box-shadow:var(--shadow-sm);}
+/* 折线图 */
+.line-svg{width:100%; height:auto; display:block; margin-top:4px;}
+.line-xl{fill:var(--muted); font-size:9px; font-family:inherit;}
+/* 排行 */
+.rank-list{display:flex; flex-direction:column; gap:9px; margin-top:4px;}
+.rank-row{display:grid; grid-template-columns:26px 1fr auto; align-items:center; gap:8px;}
+.rank-ic{font-size:18px; text-align:center;}
+.rank-n{font-weight:700; color:var(--text); font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.rank-v{font-weight:800; color:var(--primary); font-size:13px; white-space:nowrap;}
+.rank-bar{grid-column:2 / 4; height:7px; background:var(--bg); border-radius:6px; overflow:hidden; margin-top:-2px;}
+.rank-bar i{display:block; height:100%; border-radius:6px; background:linear-gradient(90deg,var(--primary),#9a8cf0); transition:width .4s;}
+/* 详情定位高亮（总览点格跳来） */
+@keyframes acctFlash{0%{background:rgba(108,140,232,.34);} 60%{background:rgba(108,140,232,.18);} 100%{background:transparent;}}
+.d-grp.flash{animation:acctFlash 1.5s ease; border-radius:10px; padding-left:8px; padding-right:8px; margin-left:-4px; margin-right:-4px;}

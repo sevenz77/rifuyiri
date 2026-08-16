@@ -157,6 +157,7 @@ const NAV = [
   { key:'notes',    label:'灵感随记', icon:'notes' },
   { key:'quota',    label:'额度追踪', icon:'quota' },
   { key:'account',  label:'我的账本', icon:'account', children:[
+    {key:'accountQuick',  label:'快速记一笔'},
     {key:'accountMonth',  label:'本月账单'},
     {key:'accountYearly', label:'年月概况'},
     {key:'accountAsset',  label:'资产管家'} ]},
@@ -167,23 +168,38 @@ let currentPage = 'greeting';
 const filters = {};   // 各页面筛选状态
 const batch   = {};   // 各页面批量选择状态 {on, sel:Set}
 
-/* ---- 我的账本 · 三个二级页的视图状态（懒初始化，避免加载顺序问题） ---- */
+/* ---- 我的账本 · 各页视图状态（懒初始化，避免加载顺序问题） ---- */
 let acctMonthCursor = '';         // 本月账单游标 'YYYY-MM'（空 = 用当月）
 let mAccountSubView = 'overview'; // 本月账单视图：'overview' 总览 | 'detail' 详情
-let acctYearlyView  = 'month';    // 年月概况视图：'month' 月账单 | 'year' 年账单
-let acctYearCursor  = 0;          // 月账单查看的年份（0 = 用今年）
+let acctJumpDay     = '';         // 总览点格跳详情：定位到该日（渲染后滚动+高亮）
+let acctQuickType   = 'expense';  // 快速记一笔：'expense' 支出 | 'income' 收入
+let acctYearlyView  = 'month';    // 年月概况查询：'week' 周 | 'month' 月 | 'year' 年
+let acctYType       = 'expense';  // 年月概况查询类型：'expense' 支出 | 'income' 收入
+let acctYearCursor  = 0;          // 年月概况年份游标（0 = 用今年）
+let acctYMonth      = 0;          // 年月概况月份游标 1-12（0 = 用当月）
+let acctWeekMon     = '';         // 年月概况周游标：该周周一 'YYYY-MM-DD'（空 = 本周）
 /* 账本游标工具 */
 function acctYM(){ return acctMonthCursor || monthStr(); }
-function acctYear(){ return acctYearCursor || (new Date()).getFullYear(); }
+function acctViewYear(){ return acctYearCursor || (new Date()).getFullYear(); }
+function acctViewMonth(){ return acctYMonth || (new Date()).getMonth()+1; }
+function acctYear(){ return acctViewYear(); }
 function shiftYM(ym, delta){
   const y = parseInt(ym.slice(0,4),10), m = parseInt(ym.slice(5,7),10);
   const d = new Date(y, m-1+delta, 1);
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
 }
-/* 账本任意页刷新（三个二级页共用 ACTIONS，需按当前页重绘） */
+/* 周游标工具（以周一为周首） */
+function acctWeekMonday(){
+  if(acctWeekMon) return new Date(acctWeekMon+'T00:00:00');
+  const t = new Date(); const dw = t.getDay(); const diff = (dw===0? -6 : 1-dw);
+  return new Date(t.getFullYear(), t.getMonth(), t.getDate()+diff);
+}
+function fmtYMD(d){ return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
+/* 账本任意页刷新（四页共用 ACTIONS，需按当前页重绘） */
 function refreshAcct(){
-  if(currentPage==='accountYearly') PAGES.accountYearly();
-  else if(currentPage==='accountAsset') PAGES.accountAsset();
+  if(currentPage==='accountQuick')   PAGES.accountQuick();
+  else if(currentPage==='accountYearly') PAGES.accountYearly();
+  else if(currentPage==='accountAsset')  PAGES.accountAsset();
   else PAGES.accountMonth();
 }
 let clockTimer = null;
@@ -1271,11 +1287,55 @@ function renderQuotaDetail(q){
 /* =============================================================================
  * 页面 4：我的账本（参照鲨鱼记账）
  * =========================================================================== */
-const ACCOUNT_CATS = [
-  {key:'餐饮',icon:'🍜'}, {key:'交通',icon:'🚌'}, {key:'购物',icon:'🛍️'}, {key:'学习',icon:'📖'},
-  {key:'娱乐',icon:'🎮'}, {key:'居家',icon:'🏠'}, {key:'医疗',icon:'💊'}, {key:'工资',icon:'💰'},
-  {key:'红包',icon:'🧧'}, {key:'其他',icon:'📦'}
+/* 支出分类（按参考图扩充为 26 个，含 emoji 图标） */
+const ACCOUNT_CATS_EXP = [
+  {key:'餐饮',icon:'🍜'}, {key:'娱乐',icon:'🎮'}, {key:'购物',icon:'🛍️'}, {key:'红包',icon:'🧧'},
+  {key:'日用',icon:'🧹'}, {key:'交通',icon:'🚌'}, {key:'住房',icon:'🏠'}, {key:'社交',icon:'🍻'},
+  {key:'蔬菜',icon:'🥬'}, {key:'水果',icon:'🍎'}, {key:'零食',icon:'🍪'}, {key:'运动',icon:'🏃'},
+  {key:'通讯',icon:'📱'}, {key:'服饰',icon:'👕'}, {key:'美容',icon:'💄'}, {key:'居家',icon:'🛋️'},
+  {key:'旅行',icon:'✈️'}, {key:'数码',icon:'💻'}, {key:'医疗',icon:'💊'}, {key:'书籍',icon:'📚'},
+  {key:'学习',icon:'📖'}, {key:'办公',icon:'🗂️'}, {key:'维修',icon:'🔧'}, {key:'快递',icon:'📦'},
+  {key:'消费',icon:'💸'}, {key:'设置',icon:'⚙️'}
 ];
+/* 收入分类 */
+const ACCOUNT_CATS_INC = [
+  {key:'工资',icon:'💰'}, {key:'理财',icon:'📈'}, {key:'其他',icon:'📦'}, {key:'收礼',icon:'🎁'}
+];
+/* 合并（去重 key，支出优先） */
+const ACCOUNT_ALL = ACCOUNT_CATS_EXP.concat(ACCOUNT_CATS_INC.filter(c=>!ACCOUNT_CATS_EXP.find(x=>x.key===c.key)));
+function catMeta(c){ return ACCOUNT_CATS_EXP.find(x=>x.key===c) || ACCOUNT_CATS_INC.find(x=>x.key===c) || {icon:'📦', key:c}; }
+function catIcon(c){ return catMeta(c).icon; }
+function catType(c){ return ACCOUNT_CATS_INC.find(x=>x.key===c) ? 'income' : 'expense'; }
+
+/* =============================================================================
+ * 我的账本 · 一级默认页：快速记一笔（支出/收入切换 + 分类快捷 + 智能输入）
+ * =========================================================================== */
+PAGES.accountQuick = function(){
+  const type = acctQuickType;
+  const cats = type==='income' ? ACCOUNT_CATS_INC : ACCOUNT_CATS_EXP;
+  let html = '<div class="page">';
+  html += '<div class="card"><div class="card-title">⚡ 快速记一笔'+
+    '<span style="flex:1"></span><button class="btn btn-sm btn-primary" data-action="smartAdd">➕ 智能输入</button></div>';
+
+  // 支出 / 收入 切换
+  html += '<div class="ai-tabs" style="margin-bottom:14px">'+
+    '<div class="ai-tab'+(type==='expense'?' active':'')+'" data-action="setQuickType" data-t="expense">支出 ▾</div>'+
+    '<div class="ai-tab'+(type==='income'?' active':'')+'" data-action="setQuickType" data-t="income">收入</div>'+
+    '</div>';
+
+  // 分类网格（4 列）
+  html += '<div class="quick-grid qgrid4">';
+  cats.forEach(c=>{
+    html += '<div class="quick" data-action="quickAdd" data-cat="'+c.key+'" data-type="'+type+'">'+
+      '<div class="q-ic">'+c.icon+'</div>'+c.key+'</div>';
+  });
+  html += '</div>';
+
+  html += '<div class="mstat-legend">点分类直接记一笔（默认'+ (type==='income'?'收入':'支出') +'）· 也可「智能输入」一次性录多笔</div>';
+  html += '</div></div>';
+  $('#content').innerHTML = html;
+};
+
 PAGES.accountMonth = function(){
   const ym = acctYM();
   const monthTx = State.accounts.filter(t=> (t.date||'').slice(0,7)===ym && t.source!=='yearly-backfill');
@@ -1299,11 +1359,6 @@ PAGES.accountMonth = function(){
     '</div>';
   if(!isCur) html += '<div style="text-align:center;margin-top:10px"><button class="btn btn-sm btn-primary" data-action="backToCur">↩ 回到本月</button></div>';
   html += '</div>';
-
-  // 快捷记一笔
-  html += '<div class="card"><div class="card-title">⚡ 快速记一笔<span style="flex:1"></span><button class="btn btn-sm btn-primary" data-action="smartAdd">➕ 智能输入</button></div><div class="quick-grid">';
-  ACCOUNT_CATS.forEach(c=>{ html += '<div class="quick" data-action="quickAdd" data-cat="'+c.key+'"><div class="q-ic">'+c.icon+'</div>'+c.key+'</div>'; });
-  html += '</div></div>';
 
   /* ---- 总览 / 详情 切换 ---- */
   html += '<div class="card"><div class="card-title">📋 账单视图</div>';
@@ -1349,7 +1404,7 @@ PAGES.accountMonth = function(){
   } else {
     html += '<div class="list">';
     State.recurring.forEach(r=>{
-      const c = ACCOUNT_CATS.find(x=>x.key===r.cat)||{icon:'📦'};
+      const c = catMeta(r.cat);
       html += '<div class="item'+(r.paused?' muted':'')+'">'+
         '<div class="q-ic" style="width:40px;height:40px">'+c.icon+'</div>'+
         '<div class="body"><div class="title">'+esc(r.name)+(r.paused?' <span class="badge" style="background:#e2e8f0;color:#64748b">已暂停</span>':'')+'</div>'+
@@ -1409,7 +1464,7 @@ function renderMonthOverview(ym){
     html += '</div>';
   }
   html += '</div>';
-  html += '<div class="mstat-legend">格内为当日净收支（收入−支出）· 颜色越深当日支出越高 · 点格看当日明细</div>';
+  html += '<div class="mstat-legend">格内为当日净收支（收入−支出）· 颜色越深当日支出越高 · 点格跳到「详情」中当天记录</div>';
   return html;
 }
 function shortAmt(n){
@@ -1428,7 +1483,7 @@ function openAcctDay(ds){
   } else {
     html += '<div class="day-section">';
     list.forEach(t=>{
-      const c = ACCOUNT_CATS.find(x=>x.key===t.cat)||{icon:'📦'};
+      const c = catMeta(t.cat);
       const a = t.accountId ? (State.assets.find(x=>x.id===t.accountId)||{}).name : '';
       html += '<div class="day-row">'+
         '<span class="day-row-text">'+c.icon+' '+esc(t.cat)+(t.note?' · '+esc(t.note):'')+(a?' <span class="badge">'+esc(a)+'</span>':'')+'</span>'+
@@ -1451,14 +1506,12 @@ function renderAccountDetail(ym){
     .sort((x,y2)=> x.date===y2.date ? (y2.created||0)-(x.created||0) : (x.date<y2.date?1:-1));
 
   let html = '<div class="toolbar">'+
-    '<button class="btn btn-primary btn-sm" data-action="addTx">＋ 记一笔</button>'+
-    '<button class="btn btn-sm" data-action="ocrAdd" title="拍照/选图，自动识别金额与日期（不存图）">📷 图片记账</button>'+
     '<button class="btn btn-sm'+(b.on?' btn-primary':'')+'" data-action="batchToggle">'+(b.on?'退出批量':'批量')+'</button>'+
     (b.on ? '<button class="btn btn-danger btn-sm" data-action="batchDel">删除选中 ('+b.sel.size+')</button>' : '')+
     '</div>';
 
   if(list.length===0){
-    html += '<div class="empty"><div class="big">💰</div>本月还没有记录，点上面「记一笔」或用快速分类记账</div>';
+    html += '<div class="empty"><div class="big">💰</div>本月还没有记录，去「快速记一笔」开始记账吧</div>';
     return html;
   }
   // 按日分组
@@ -1469,11 +1522,11 @@ function renderAccountDetail(ym){
     const arr = map[d];
     const inc = arr.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
     const exp = arr.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
-    html += '<div class="d-grp"><span class="d-date">'+d.slice(5)+' '+dowCN(d)+(d===todayStr()?' · 今天':'')+'</span>'+
+    html += '<div class="d-grp'+(d===acctJumpDay?' flash':'')+'" data-day="'+d+'"><span class="d-date">'+d.slice(5)+' '+dowCN(d)+(d===todayStr()?' · 今天':'')+'</span>'+
       '<span class="d-sum">'+(inc>0?'收 '+fmt(inc)+' · ':'')+'支 '+fmt(exp)+'</span></div>';
     html += '<div class="list" style="margin-bottom:12px">';
     arr.forEach(t=>{
-      const c = ACCOUNT_CATS.find(x=>x.key===t.cat)||{icon:'📦'};
+      const c = catMeta(t.cat);
       const cardName = t.accountId ? (State.assets.find(x=>x.id===t.accountId)||{}).name : '';
       html += '<div class="item">';
       if(b.on) html += '<div class="check'+(b.sel.has(t.id)?' on':'')+'" data-action="sel" data-id="'+t.id+'">'+(b.sel.has(t.id)?'✓':'')+'</div>';
@@ -1527,41 +1580,170 @@ function computeYearlyStats(){
   const totExp = round2(years.reduce((s,y)=>s+y.exp,0));
   return { years, totInc, totExp, totBal: round2(totInc-totExp) };
 }
+/* 某周一是一年的第几周（以周一为周首） */
+function weekIndexOf(d){
+  const y = d.getFullYear();
+  const jan1 = new Date(y,0,1); const dow = jan1.getDay();
+  const w1 = new Date(y,0,1+(dow===0? -6 : 1-dow));
+  const days = Math.round((d - w1)/86400000);
+  return Math.floor(days/7)+1;
+}
+/* 取当前视图/类型下的流水（已按类型筛选、排除年度补录 lump） */
+function periodTxList(sign){
+  if(acctYearlyView==='year'){
+    const yr = acctViewYear();
+    return State.accounts.filter(t=> t.type===sign && t.source!=='yearly-backfill' && (t.date||'').length>=7 && parseInt(t.date.slice(0,4),10)===yr);
+  } else if(acctYearlyView==='month'){
+    const pk = acctViewYear()+'-'+pad(acctViewMonth());
+    return State.accounts.filter(t=> t.type===sign && t.source!=='yearly-backfill' && (t.date||'').slice(0,7)===pk);
+  } else {
+    const mon = acctWeekMonday(); const sun = new Date(mon.getFullYear(),mon.getMonth(),mon.getDate()+6);
+    const s=fmtYMD(mon), e=fmtYMD(sun);
+    return State.accounts.filter(t=> t.type===sign && t.source!=='yearly-backfill' && (t.date||'')>=s && (t.date||'')<=e);
+  }
+}
+/* 聚合：分桶 + 总计 + 均值 + 区间文案 + 分类排行 */
+function computeYearlyQuery(){
+  const sign = acctYType==='income' ? 'income' : 'expense';
+  const txs = periodTxList(sign);
+  let buckets = [], rangeLabel = '';
+  if(acctYearlyView==='year'){
+    const yr = acctViewYear();
+    for(let m=1;m<=12;m++) buckets.push({label:m+'月', val:0, key:pad(m)});
+    rangeLabel = yr+' 年 · 月走势';
+    txs.forEach(t=>{ const mi=parseInt((t.date||'').slice(5,7),10)-1; if(mi>=0&&mi<12) buckets[mi].val += t.amount; });
+  } else if(acctYearlyView==='month'){
+    const yr=acctViewYear(), mo=acctViewMonth();
+    const last = new Date(yr, mo, 0).getDate();
+    for(let d=1;d<=last;d++) buckets.push({label:String(d), val:0, key:pad(d)});
+    rangeLabel = yr+' 年 '+mo+' 月 · 日走势';
+    txs.forEach(t=>{ const di=parseInt((t.date||'').slice(8,10),10); if(di>=1&&di<=last) buckets[di-1].val += t.amount; });
+  } else {
+    const mon = acctWeekMonday(); const sun = new Date(mon.getFullYear(),mon.getMonth(),mon.getDate()+6);
+    const labels=['一','二','三','四','五','六','日'];
+    for(let i=0;i<7;i++){ const dd=new Date(mon.getFullYear(),mon.getMonth(),mon.getDate()+i); buckets.push({label:labels[i], val:0, key:fmtYMD(dd), ds:fmtYMD(dd)}); }
+    rangeLabel = mon.getFullYear()+' 年第'+weekIndexOf(mon)+'周 · '+fmtYMD(mon).slice(5)+'~'+fmtYMD(sun).slice(5);
+    txs.forEach(t=>{ const bi=buckets.findIndex(b=> b.ds===t.date); if(bi>=0) buckets[bi].val += t.amount; });
+  }
+  buckets.forEach(b=> b.val = round2(b.val));
+  const total = round2(buckets.reduce((s,b)=> s+b.val, 0));
+  const avg = round2(total / Math.max(buckets.length,1));
+  const cmap = {};
+  txs.forEach(t=>{ cmap[t.cat] = (cmap[t.cat]||0) + t.amount; });
+  const ranking = Object.keys(cmap).map(k=>({cat:k, val:round2(cmap[k])})).sort((a,b)=> b.val-a.val).slice(0,8);
+  return { sign, buckets, total, avg, rangeLabel, ranking };
+}
+/* 折线图（内联 SVG） */
+function renderLineChart(q){
+  const vals = q.buckets.map(b=>b.val);
+  const max = Math.max.apply(null, vals.concat([0]));
+  const W=320,H=150,padL=10,padR=10,padT=16,padB=24;
+  const n = q.buckets.length;
+  if(n===0) return '<div class="empty" style="padding:14px">该区间暂无'+(q.sign==='income'?'收入':'支出')+'记录</div>';
+  const x = i => padL + (W-padL-padR)*(n===1?0.5:i/(n-1));
+  const y = v => padT + (H-padT-padB)*(max>0?(1-v/max):1);
+  const col = q.sign==='income' ? '#3aa76d' : '#e8606b';
+  const pts = q.buckets.map((b,i)=> x(i).toFixed(1)+','+y(b.val).toFixed(1));
+  const area = 'M'+x(0).toFixed(1)+','+(H-padB)+' L'+pts.join(' L')+' L'+x(n-1).toFixed(1)+','+(H-padB)+' Z';
+  const line = 'M'+pts.join(' L');
+  let xl = '';
+  q.buckets.forEach((b,i)=>{
+    const show = (n<=12) || (i%5===0) || (i===n-1);
+    if(show) xl += '<text x="'+x(i).toFixed(1)+'" y="'+(H-7)+'" text-anchor="middle" class="line-xl">'+b.label+'</text>';
+  });
+  const dots = q.buckets.map((b,i)=> '<circle cx="'+x(i).toFixed(1)+'" cy="'+y(b.val).toFixed(1)+'" r="'+(b.val>0?2.6:1.6)+'" fill="'+col+'"/>').join('');
+  return '<svg viewBox="0 0 '+W+' '+H+'" class="line-svg">'+
+    '<line x1="'+padL+'" y1="'+(H-padB)+'" x2="'+(W-padR)+'" y2="'+(H-padB)+'" stroke="var(--line,#e5e7eb)" stroke-width="1"/>'+
+    '<path d="'+area+'" fill="'+col+'" fill-opacity="0.12"/>'+
+    '<path d="'+line+'" fill="none" stroke="'+col+'" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>'+
+    dots + xl + '</svg>';
+}
+/* 分类排行（带进度条） */
+function renderRankList(q){
+  if(q.ranking.length===0) return '<div class="empty" style="padding:12px">该区间暂无分类数据</div>';
+  const max = q.ranking[0].val;
+  return '<div class="rank-list">'+ q.ranking.map(r=>{
+    const pct = max>0 ? Math.min(100, r.val/max*100) : 0;
+    return '<div class="rank-row">'+
+      '<span class="rank-ic">'+catIcon(r.cat)+'</span>'+
+      '<span class="rank-n">'+esc(r.cat)+'</span>'+
+      '<span class="rank-v">'+fmt(r.val)+'</span>'+
+      '<div class="rank-bar"><i style="width:'+pct+'%"></i></div>'+
+    '</div>';
+  }).join('') + '</div>';
+}
+
 PAGES.accountYearly = function(){
-  const view = acctYearlyView;
+  const view = acctYearlyView, type = acctYType;
+  const q = computeYearlyQuery();
   let html = '<div class="page">';
   html += '<div class="card"><div class="card-title">📈 年月概况'+
-    '<span style="flex:1"></span><span class="mc-stat-inline">数据来源：本月账单流水</span></div>';
-  html += '<div class="ai-tabs" style="margin-bottom:0">'+
-    '<div class="ai-tab'+(view==='month'?' active':'')+'" data-action="setYView" data-v="month">月账单</div>'+
-    '<div class="ai-tab'+(view==='year'?' active':'')+'" data-action="setYView" data-v="year">年账单</div>'+
-    '</div></div>';
+    '<span style="flex:1"></span><span class="mc-stat-inline">周 / 月 / 年 走势</span></div>';
+  // 支出 / 收入
+  html += '<div class="seg" style="margin-bottom:12px">'+
+    '<div class="seg-btn'+(type==='expense'?' active':'')+'" data-action="setYType" data-t="expense">支出 ▾</div>'+
+    '<div class="seg-btn'+(type==='income'?' active':'')+'" data-action="setYType" data-t="income">收入</div>'+
+    '</div>';
+  // 周 / 月 / 年
+  html += '<div class="ai-tabs" style="margin-bottom:12px">'+
+    '<div class="ai-tab'+(view==='week'?' active':'')+'" data-action="setYView" data-v="week">周</div>'+
+    '<div class="ai-tab'+(view==='month'?' active':'')+'" data-action="setYView" data-v="month">月</div>'+
+    '<div class="ai-tab'+(view==='year'?' active':'')+'" data-action="setYView" data-v="year">年</div>'+
+    '</div>';
 
-  if(view==='month'){
-    const yr = acctYear();
-    const st = computeMonthlyStats(yr);
-    html += '<div class="card">';
+  // 时间导航
+  if(view==='week'){
+    const mon=acctWeekMonday(), sun=new Date(mon.getFullYear(),mon.getMonth(),mon.getDate()+6);
     html += '<div class="month-switch">'+
-      '<button class="btn btn-sm btn-soft" data-action="prevYear">‹ '+(yr-1)+'</button>'+
+      '<button class="btn btn-sm btn-soft" data-action="prevWeek">‹ 上周</button>'+
+      '<div class="month-title">'+q.rangeLabel+'</div>'+
+      '<button class="btn btn-sm btn-soft" data-action="nextWeek">下周 ›</button></div>'+
+      (acctWeekMon? '<div style="text-align:center"><button class="btn btn-sm" data-action="backWeek">↩ 回到本周</button></div>':'');
+  } else if(view==='month'){
+    const yr=acctViewYear(), mo=acctViewMonth();
+    html += '<div class="month-switch">'+
+      '<button class="btn btn-sm btn-soft" data-action="prevMonthY">‹ '+mo+'月</button>'+
+      '<div class="month-title">'+yr+' 年'+(yr===(new Date()).getFullYear()&&mo===(new Date()).getMonth()+1?'<span class="mcur">本月</span>':'')+'</div>'+
+      '<button class="btn btn-sm btn-soft" data-action="nextMonthY">'+mo+'月 ›</button></div>'+
+      ((acctYMonth||acctYearCursor)? '<div style="text-align:center"><button class="btn btn-sm" data-action="backMonthY">↩ 回到本月</button></div>':'');
+  } else {
+    const yr=acctViewYear();
+    html += '<div class="month-switch">'+
+      '<button class="btn btn-sm btn-soft" data-action="prevYearY">‹ '+yr+'</button>'+
       '<div class="month-title">'+yr+' 年'+(yr===(new Date()).getFullYear()?'<span class="mcur">今年</span>':'')+'</div>'+
-      '<button class="btn btn-sm btn-soft" data-action="nextYear">'+(yr+1)+' ›</button>'+
-      '</div>';
-    html += '<div class="stat-row">'+
-      '<div class="stat income"><div class="label">年收入</div><div class="val">'+fmt(st.inc)+'</div></div>'+
-      '<div class="stat expense"><div class="label">年支出</div><div class="val">'+fmt(st.exp)+'</div></div>'+
-      '<div class="stat'+(st.bal<0?' expense':'')+'"><div class="label">年结余</div><div class="val">'+fmt(st.bal)+'</div></div>'+
-      '</div></div>';
+      '<button class="btn btn-sm btn-soft" data-action="nextYearY">'+yr+' ›</button></div>'+
+      (acctYearCursor? '<div style="text-align:center"><button class="btn btn-sm" data-action="backYearY">↩ 回到今年</button></div>':'');
+  }
 
-    html += '<div class="card"><div class="card-title">🗓 '+yr+' 年 · 每月明细</div>';
+  // 统计：总额 + 均值
+  const totLabel = type==='income'?'总收入':'总支出';
+  const avgLabel = '日均';
+  html += '<div class="stat-row">'+
+    '<div class="stat'+(type==='income'?' income':' expense')+'"><div class="label">'+totLabel+'</div><div class="val">'+fmt(q.total)+'</div></div>'+
+    '<div class="stat"><div class="label">'+avgLabel+'</div><div class="val">'+fmt(q.avg)+'</div></div>'+
+    '</div>';
+
+  // 折线图
+  html += '<div class="card"><div class="card-title">📉 '+(type==='income'?'收入':'支出')+'走势 · '+q.rangeLabel+'</div>'+
+    renderLineChart(q)+'</div>';
+
+  // 排行
+  html += '<div class="card"><div class="card-title">🏆 '+(type==='income'?'收入来源':'支出')+'排行</div>'+
+    renderRankList(q)+'</div>';
+
+  // 年视图：各月明细（可跳）+ 补录
+  if(view==='year'){
+    const yr=acctViewYear();
+    const st = computeMonthlyStats(yr);
+    html += '<div class="card"><div class="card-title">🗓 '+yr+' 年 · 每月明细<span style="flex:1"></span><button class="btn btn-sm btn-primary" data-action="backfillYear">＋ 补录年度</button></div>';
     if(st.inc===0 && st.exp===0){
       html += '<div class="empty" style="padding:14px">'+yr+' 年还没有账目记录</div>';
     } else {
       const curM = (yr===(new Date()).getFullYear()) ? (new Date()).getMonth()+1 : 0;
       html += '<div class="ystat-list">';
       st.months.forEach(m=>{
-        const bal = round2(m.inc-m.exp);
-        const empty = (m.inc===0 && m.exp===0);
-        html += '<div class="ystat-row'+(m.m===curM?' on':'')+(empty?' dim':'')+'" data-action="jumpMonth" data-ym="'+yr+'-'+pad(m.m)+'">'+
+        const bal = round2(m.inc-m.exp); const empty=(m.inc===0&&m.exp===0);
+        html += '<div class="ystat-row'+(m.m===curM?' on':'')+(empty?' dim':'')+'" data-action="jumpYMonth" data-ym="'+yr+'-'+pad(m.m)+'">'+
           '<div class="ystat-y">'+m.m+' 月'+(m.m===curM?' <span class="mcur">本月</span>':'')+'</div>'+
           '<div class="ystat-i">收 '+fmt(m.inc)+'</div>'+
           '<div class="ystat-e">支 '+fmt(m.exp)+'</div>'+
@@ -1569,32 +1751,6 @@ PAGES.accountYearly = function(){
           '</div>';
       });
       html += '</div><div class="mstat-legend">点任意月份可跳到「本月账单」查看该月明细</div>';
-    }
-    html += '</div>';
-  } else {
-    const st = computeYearlyStats();
-    html += '<div class="card"><div class="card-title">🏁 历年总计'+
-      '<span style="flex:1"></span><button class="btn btn-sm btn-primary" data-action="backfillYear">＋ 补录年度</button></div>';
-    html += '<div class="stat-row">'+
-      '<div class="stat income"><div class="label">总收入</div><div class="val">'+fmt(st.totInc)+'</div></div>'+
-      '<div class="stat expense"><div class="label">总支出</div><div class="val">'+fmt(st.totExp)+'</div></div>'+
-      '<div class="stat'+(st.totBal<0?' expense':'')+'"><div class="label">总结余</div><div class="val">'+fmt(st.totBal)+'</div></div>'+
-      '</div></div>';
-
-    html += '<div class="card"><div class="card-title">📅 各年度明细</div>';
-    if(st.years.length===0){
-      html += '<div class="empty"><div class="big">📅</div>还没有任何年份数据。往年数据可点右上「＋ 补录年度」一次性录入</div>';
-    } else {
-      html += '<div class="ystat-list">';
-      st.years.forEach(y=>{
-        html += '<div class="ystat-row" data-action="jumpYear" data-y="'+y.year+'">'+
-          '<div class="ystat-y">'+y.year+' 年'+(y.backfill?' <span class="badge">含补录</span>':'')+'</div>'+
-          '<div class="ystat-i">收 '+fmt(y.inc)+'</div>'+
-          '<div class="ystat-e">支 '+fmt(y.exp)+'</div>'+
-          '<div class="ystat-b'+(y.bal<0?' neg':'')+'">结余 '+fmt(y.bal)+'</div>'+
-          '</div>';
-      });
-      html += '</div><div class="mstat-legend">点任意年份可切到「月账单」查看该年 12 个月明细</div>';
     }
     html += '</div>';
 
@@ -1706,7 +1862,7 @@ function txForm(title, prefill, onOk){
     .concat(State.assets.map(a=>({ value:a.id, text:(a.kind==='liability'?'🧾 ':'💳 ')+a.name })));
   formModal(title, [
     {key:'type',label:'类型',type:'select',value:prefill.type||'expense',options:[{value:'expense',text:'支出'},{value:'income',text:'收入'}]},
-    {key:'cat',label:'分类',type:'select',value:prefill.cat||'餐饮',options:ACCOUNT_CATS.map(c=>({value:c.key,text:c.key}))},
+    {key:'cat',label:'分类',type:'select',value:prefill.cat||'餐饮',options:ACCOUNT_ALL.map(c=>({value:c.key,text:c.key}))},
     {key:'amount',label:'金额',type:'number',value:prefill.amount||'',placeholder:'0.00'},
     {key:'note',label:'备注',value:prefill.note||'',placeholder:'选填'},
     {key:'date',label:'日期',type:'text',value:prefill.date||todayStr()},
@@ -1757,13 +1913,31 @@ const ACCOUNT_ACTIONS = {
   nextMonth(){ acctMonthCursor = shiftYM(acctYM(),  1); PAGES.accountMonth(); },
   backToCur(){ acctMonthCursor = ''; PAGES.accountMonth(); },
   setMView(id, el){ mAccountSubView = el.dataset.v || 'overview'; PAGES.accountMonth(); },
-  openAcctDay(id, el){ openAcctDay(el.dataset.day); },
+  openAcctDay(id, el){
+    mAccountSubView = 'detail';
+    acctJumpDay = el.dataset.day;
+    PAGES.accountMonth();
+    setTimeout(()=>{
+      const tgt = document.querySelector('.d-grp[data-day="'+acctJumpDay+'"]');
+      if(tgt) tgt.scrollIntoView({behavior:'smooth', block:'center'});
+      acctJumpDay = '';
+    }, 40);
+  },
+  /* ---- 快速记一笔 ---- */
+  setQuickType(id, el){ acctQuickType = el.dataset.t || 'expense'; PAGES.accountQuick(); },
   /* ---- 年月概况 ---- */
   setYView(id, el){ acctYearlyView = el.dataset.v || 'month'; PAGES.accountYearly(); },
-  prevYear(){ acctYearCursor = acctYear()-1; PAGES.accountYearly(); },
-  nextYear(){ acctYearCursor = acctYear()+1; PAGES.accountYearly(); },
-  jumpMonth(id, el){ acctMonthCursor = el.dataset.ym; goto('accountMonth'); },
-  jumpYear(id, el){ acctYearCursor = parseInt(el.dataset.y,10); acctYearlyView='month'; PAGES.accountYearly(); },
+  setYType(id, el){ acctYType = el.dataset.t || 'expense'; PAGES.accountYearly(); },
+  prevWeek(){ const m = acctWeekMonday(); acctWeekMon = fmtYMD(new Date(m.getFullYear(), m.getMonth(), m.getDate()-7)); PAGES.accountYearly(); },
+  nextWeek(){ const m = acctWeekMonday(); acctWeekMon = fmtYMD(new Date(m.getFullYear(), m.getMonth(), m.getDate()+7)); PAGES.accountYearly(); },
+  backWeek(){ acctWeekMon = ''; PAGES.accountYearly(); },
+  prevMonthY(){ acctYMonth = acctViewMonth()-1; if(acctYMonth<1){ acctYMonth=12; acctYearCursor = acctViewYear()-1; } PAGES.accountYearly(); },
+  nextMonthY(){ acctYMonth = acctViewMonth()+1; if(acctYMonth>12){ acctYMonth=1; acctYearCursor = acctViewYear()+1; } PAGES.accountYearly(); },
+  backMonthY(){ acctYMonth = 0; acctYearCursor = 0; PAGES.accountYearly(); },
+  prevYearY(){ acctYearCursor = acctViewYear()-1; PAGES.accountYearly(); },
+  nextYearY(){ acctYearCursor = acctViewYear()+1; PAGES.accountYearly(); },
+  backYearY(){ acctYearCursor = 0; PAGES.accountYearly(); },
+  jumpYMonth(id, el){ acctMonthCursor = el.dataset.ym; goto('accountMonth'); },
   backfillYear(){ openBackfillForm(); },
   delBackfill(id){ confirmDialog('删除补录', '确定删除这条年度补录数据吗？', ()=>{
     const t = State.accounts.find(x=>x.id===id);
@@ -1773,7 +1947,8 @@ const ACCOUNT_ACTIONS = {
   }); },
   /* ---- 交易 ---- */
   quickAdd(cat, el){ const c = (el && el.dataset.cat) || cat;
-    txForm('记一笔 · '+c, {cat:c, type:'expense'}, (d,amt)=>{
+    const type = (el && el.dataset.type) || catType(c) || 'expense';
+    txForm('记一笔 · '+c, {cat:c, type}, (d,amt)=>{
       const tx = {id:uid(), type:d.type, cat:d.cat, amount:amt, note:d.note, date:d.date, time:nowStr().slice(11,16),
                   created:Date.now(), accountId:resolveTxCard(d), source:'normal'};
       State.accounts.push(tx); applyTxToAsset(tx, +1);
@@ -1843,6 +2018,7 @@ const ACCOUNT_ACTIONS = {
   ocrAdd(){ startOcrImport(); }
 };
 ACTIONS.account       = ACCOUNT_ACTIONS;  // 兼容旧 key
+ACTIONS.accountQuick  = ACCOUNT_ACTIONS;
 ACTIONS.accountMonth  = ACCOUNT_ACTIONS;
 ACTIONS.accountYearly = ACCOUNT_ACTIONS;
 ACTIONS.accountAsset  = ACCOUNT_ACTIONS;
@@ -1909,14 +2085,14 @@ function openBudgetModal(ym){
   const yyyyMM = ym || curYM();
   if(!State.budgets[yyyyMM]) State.budgets[yyyyMM] = {};
   const cur = State.budgets[yyyyMM];
-  const fields = ACCOUNT_CATS.map(c=>({
+  const fields = ACCOUNT_ALL.map(c=>({
     key:c.key, label:c.icon+' '+c.key, type:'number',
     value: (cur[c.key]!=null ? cur[c.key] : ''),
     placeholder:'不设则留空'
   }));
   fields.push({key:'_tip', label:'💡 留空表示该分类不设限额；按分类设预算可防止某类超支。', type:'text', value:'', placeholder:''});
   formModal('📊 月度预算 · '+yyyyMM, fields, d=>{
-    ACCOUNT_CATS.forEach(c=>{
+    ACCOUNT_ALL.forEach(c=>{
       const v = parseFloat(d[c.key]);
       if(isNaN(v) || v<=0){ delete cur[c.key]; }
       else cur[c.key] = v;
@@ -2001,7 +2177,7 @@ function openRecurringForm(r){
   formModal((isEdit?'编辑':'新增')+'固定收支', [
     {key:'name',label:'名称',value:pre.name,placeholder:'例如：房租 / 工资 / Netflix'},
     {key:'type',label:'类型',type:'select',value:pre.type,options:[{value:'expense',text:'支出'},{value:'income',text:'收入'}]},
-    {key:'cat',label:'分类',type:'select',value:pre.cat,options:ACCOUNT_CATS.map(c=>({value:c.key,text:c.key}))},
+    {key:'cat',label:'分类',type:'select',value:pre.cat,options:ACCOUNT_ALL.map(c=>({value:c.key,text:c.key}))},
     {key:'amount',label:'金额',type:'number',value:String(pre.amount||''),placeholder:'0.00'},
     {key:'cycle',label:'周期',type:'select',value:pre.cycle,options:[{value:'monthly',text:'每月'},{value:'weekly',text:'每周'},{value:'day',text:'每天'}]},
     {key:'day',label:'每月几号（仅每月）',type:'number',value:String(pre.day||1),placeholder:'1-31'},
@@ -2069,19 +2245,44 @@ function parseAmount(s){
 }
 function parseDate(s){
   const today = new Date(); const y=today.getFullYear(), m=today.getMonth(), d=today.getDate();
+  // 1) 8 位连续数字 YYYYMMDD（如 20260817）
+  const m8 = /(20[0-9]{2}|19[0-9]{2})([0-9]{2})([0-9]{2})/.exec(s.replace(/\s/g,''));
+  if(m8){ const yy=+m8[1], mm=+m8[2], dd=+m8[3]; if(mm>=1&&mm<=12&&dd>=1&&dd<=31) return yy+'-'+pad(mm)+'-'+pad(dd); }
+  // 2) 中文 年+月+日（如 2026年8月17日）
+  let c = /([0-9]{4})年([0-9]{1,2})月([0-9]{1,2})[日号]?/.exec(s);
+  if(c){ const yy=+c[1], mm=+c[2], dd=+c[3]; if(mm>=1&&mm<=12&&dd>=1&&dd<=31) return yy+'-'+pad(mm)+'-'+pad(dd); }
+  // 3) 中文 年+月（无日）→ 日=当日
+  c = /([0-9]{4})年([0-9]{1,2})月/.exec(s);
+  if(c){ const yy=+c[1], mm=+c[2]; if(mm>=1&&mm<=12) return yy+'-'+pad(mm)+'-'+pad(d); }
+  // 4) 仅年（如 2026年）→ 月日=当日
+  c = /([0-9]{4})年/.exec(s);
+  if(c){ const yy=+c[1]; return yy+'-'+pad(m+1)+'-'+pad(d); }
+  // 5) 横线/点 年+月+日（如 2026-8-17）
+  c = /([0-9]{4})[-/.]([0-9]{1,2})[-/.]([0-9]{1,2})/.exec(s);
+  if(c){ const yy=+c[1], mm=+c[2], dd=+c[3]; if(mm>=1&&mm<=12&&dd>=1&&dd<=31) return yy+'-'+pad(mm)+'-'+pad(dd); }
+  // 6) 横线/点 年+月（无日）→ 日=当日
+  c = /([0-9]{4})[-/.]([0-9]{1,2})/.exec(s);
+  if(c){ const yy=+c[1], mm=+c[2]; if(mm>=1&&mm<=12) return yy+'-'+pad(mm)+'-'+pad(d); }
+  // 7) 月+日（无年）→ 年=当年
+  c = /([0-9]{1,2})月([0-9]{1,2})[日号]?/.exec(s);
+  if(c){ const mm=+c[1], dd=+c[2]; if(mm>=1&&mm<=12&&dd>=1&&dd<=31) return y+'-'+pad(mm)+'-'+pad(dd); }
+  // 8) 仅月（如 8月）→ 年=当年, 日=当日
+  c = /([0-9]{1,2})月/.exec(s);
+  if(c){ const mm=+c[1]; if(mm>=1&&mm<=12) return y+'-'+pad(mm)+'-'+pad(d); }
+  // 9) 仅日（如 17日）→ 年月=当日
+  c = /([0-9]{1,2})[日号]/.exec(s);
+  if(c){ const dd=+c[1]; if(dd>=1&&dd<=31) return y+'-'+pad(m+1)+'-'+pad(dd); }
+  // 10) 相对词：今天/昨天/前天/大前天
+  if(/今天/.test(s)) return todayStr();
   let dt = new Date(y,m,d);
-  if(/今天/.test(s)) dt=new Date(y,m,d);
-  else if(/昨天|昨日/.test(s)) dt=new Date(y,m,d-1);
+  if(/昨天|昨日/.test(s)) dt=new Date(y,m,d-1);
   else if(/前天/.test(s)) dt=new Date(y,m,d-2);
   else if(/大前天/.test(s)) dt=new Date(y,m,d-3);
   else {
     const wk = /(?:周|星期)([一二三四五六日天])/.exec(s);
     if(wk){ const map={'日':0,'天':0,'一':1,'二':2,'三':3,'四':4,'五':5,'六':6}; const target=map[wk[1]];
       let diff=(target - today.getDay()+7)%7; if(diff===0) diff=7; dt=new Date(y,m,d-diff); }
-    else { const md = /([0-9]{1,2})月([0-9]{1,2})[日号]?/.exec(s);
-      if(md){ const mm=parseInt(md[1]), dd=parseInt(md[2]); if(mm>=1&&mm<=12&&dd>=1&&dd<=31) dt=new Date(y,mm-1,dd); }
-      else { const ymd = /([0-9]{4})[-/.]([0-9]{1,2})[-/.]([0-9]{1,2})/.exec(s);
-        if(ymd) dt=new Date(parseInt(ymd[1]),parseInt(ymd[2])-1,parseInt(ymd[3])); } }
+    else return todayStr(); // 无日期信息 → 当日
   }
   return dt.getFullYear()+'-'+pad(dt.getMonth()+1)+'-'+pad(dt.getDate());
 }
@@ -2093,7 +2294,7 @@ function parseType(s){
 function parseOne(s){
   s = (s||'').trim(); if(!s) return null;
   const date = parseDate(s);
-  const noDate = s.replace(/(今天|昨天|昨日|前天|大前天|周[一二三四五六日天]|星期[一二三四五六日天]|[0-9]{1,2}月[0-9]{1,2}[日号]?|[0-9]{4}[-/.][0-9]{1,2}[-/.][0-9]{1,2})/g, ' ');
+  const noDate = s.replace(/(今天|昨天|昨日|前天|大前天|周[一二三四五六日天]|星期[一二三四五六日天]|[0-9]{4}年[0-9]{1,2}月[0-9]{1,2}[日号]?|[0-9]{4}年[0-9]{1,2}月|[0-9]{1,2}月[0-9]{1,2}[日号]?|[0-9]{1,2}月|[0-9]{1,2}[日号]|[0-9]{8}|[0-9]{4}[-/.][0-9]{1,2}[-/.][0-9]{1,2})/g, ' ');
   const amount = parseAmount(noDate);
   if(isNaN(amount)||amount<=0) return null;
   const type = parseType(noDate);
@@ -2111,7 +2312,7 @@ function parseOne(s){
 }
 function parseBulk(text){
   const segsRaw = [];
-  const anchorRe = /今天|昨天|昨日|前天|大前天|周[一二三四五六日天]|星期[一二三四五六日天]|[0-9]{1,2}月[0-9]{1,2}[日号]?|[0-9]{4}[-/.][0-9]{1,2}[-/.][0-9]{1,2}/g;
+  const anchorRe = /今天|昨天|昨日|前天|大前天|周[一二三四五六日天]|星期[一二三四五六日天]|[0-9]{4}年[0-9]{1,2}月[0-9]{1,2}[日号]?|[0-9]{4}年[0-9]{1,2}月|[0-9]{1,2}月[0-9]{1,2}[日号]?|[0-9]{1,2}月|[0-9]{8}|[0-9]{4}[-/.][0-9]{1,2}[-/.][0-9]{1,2]/g;
   const anchors = [...(text||'').matchAll(anchorRe)];
   if(anchors.length>=2){
     for(let i=0;i<anchors.length;i++){
@@ -2167,7 +2368,7 @@ function openSmartModal(prefill){
     if(!tg) return;
     const i = parseInt(tg.dataset.i,10);
     const r = parsed[i]; if(!r) return;
-    const opts = ACCOUNT_CATS.map(c=> '<span class="cat-pick '+(c.key===r.cat?'on':'')+'" data-c="'+esc(c.key)+'">'+c.icon+' '+esc(c.key)+'</span>').join('');
+    const opts = ACCOUNT_ALL.map(c=> '<span class="cat-pick '+(c.key===r.cat?'on':'')+'" data-c="'+esc(c.key)+'">'+c.icon+' '+esc(c.key)+'</span>').join('');
     openModal('<h3>📂 选择分类</h3>'+
       '<div class="cat-grid">'+opts+'</div>'+
       '<div class="modal-actions"><button class="btn" data-x="cancel">取消</button></div>');
