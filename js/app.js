@@ -23,7 +23,9 @@ const State = {
   rec:      DB.get('rec', {date:'', movie:'', tv:'', book:''}),
   settings: DB.get('settings', { theme:'light', avatar:'', quotaPwd:'', accountPwd:'', lastExport:'', aiUsage:{} }),
   checkins: DB.get('checkins', []),  // 打卡日志：['YYYY-MM-DD', ...]，仅追加；dailyReset 不触碰
-  checkinItems: DB.get('checkinItems', {}) // 打卡具体事项：{date: {items: ['任务名',...], at: timestamp}}；超过 90 天 items 自动清空，date 保留
+  checkinItems: DB.get('checkinItems', {}), // 打卡具体事项：{date: {items: ['任务名',...], at: timestamp}}；超过 90 天 items 自动清空，date 保留
+  budgets:   DB.get('budgets', {}),   // 月度预算：{ 'YYYY-MM': { '餐饮': 1000, ... } }；可为部分分类设置
+  recurring: DB.get('recurring', []), // 固定收支：[{ id, name, type, cat, amount, cycle:'monthly', day, lastAdded, paused, note }]
 };
 const save = k => DB.set(k, State[k]);
 const saveSettings = () => DB.set('settings', State.settings);
@@ -352,6 +354,9 @@ function dailyReset(){
     State.rec = { date:t, movie:rand(CONFIG.movies), tv:rand(CONFIG.tvs), book:rand(CONFIG.books) };
     save('rec');
   }
+  // 固定收支：检查今日是否需要入账
+  const added = addRecurringToday(t);
+  if(added>0) toast('已自动入账 '+added+' 笔固定收支','good');
 }
 
 /* ----------------------------- 导出 / 导入 / 红点 ----------------------------- */
@@ -1150,6 +1155,38 @@ PAGES.account = function(){
     '<div class="stat"><div class="label">本月结余</div><div class="val">'+fmt(inc-exp)+'</div></div>'+
     '</div></div>';
 
+  /* ---- 月度预算（按分类限额 + 超支警告） ---- */
+  const yyyyMM = curYM();
+  const prog = computeBudgetProgress(yyyyMM);
+  const hasBudget = prog.length>0;
+  const overList = prog.filter(p=> p.over>0);
+  html += '<div class="card"><div class="card-title">📊 '+(yyyyMM)+' 月预算'+
+    '<span style="flex:1"></span><button class="btn btn-sm" data-action="openBudget">⚙️ 设置</button></div>';
+  if(!hasBudget){
+    html += '<div class="empty" style="padding:14px">还没有设置月度预算，点右上「⚙️ 设置」按分类设定本月限额</div>';
+  } else {
+    // 顶部一句话警告
+    if(overList.length>0){
+      const warnTxt = overList.map(p=> p.cat+' 超 '+fmt(p.over)).join(' · ');
+      html += '<div class="budget-warn">⚠️ '+esc(warnTxt)+'</div>';
+    }
+    html += '<div class="budget-list">';
+    prog.forEach(p=>{
+      const pct = p.pct;
+      const over = p.over>0;
+      html += '<div class="budget-row'+(over?' over':'')+'">'+
+        '<div class="b-name">'+esc(p.cat)+'</div>'+
+        '<div class="b-num">已花 <b>'+fmt(p.used)+'</b> / <span>预算 '+fmt(p.budget)+'</span>'+(over?' <em>· 超 '+fmt(p.over)+'</em>':'')+'</div>'+
+        '<div class="bar'+(over?' warn':'')+'"><i style="width:'+pct+'%"></i></div>'+
+        '</div>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+
+  /* ---- 分类占比饼图（本月） ---- */
+  html += '<div class="card"><div class="card-title">🥧 月度分类占比</div>'+renderExpenseDonut(yyyyMM)+'</div>';
+
   // 快捷分类
   html += '<div class="card"><div class="card-title">⚡ 快捷记一笔<span style="flex:1"></span><button class="btn btn-sm btn-primary" data-action="smartAdd">➕ 智能输入</button></div><div class="quick-grid">';
   ACCOUNT_CATS.forEach(c=>{ html += '<div class="quick" data-action="quickAdd" data-cat="'+c.key+'"><div class="q-ic">'+c.icon+'</div>'+c.key+'</div>'; });
@@ -1247,6 +1284,30 @@ PAGES.account = function(){
     html += '</div>';
   }
   html += '</div></div></div>';
+
+  /* ---- 固定收支（周期入账） ---- */
+  html += '<div class="card"><div class="card-title">📅 固定收支'+
+    '<span style="flex:1"></span><button class="btn btn-sm btn-primary" data-action="addRecurring">＋ 新增</button></div>';
+  if(State.recurring.length===0){
+    html += '<div class="empty"><div class="big">📅</div>添加房租、订阅、工资等周期性账目，到期自动入账，省心</div>';
+  } else {
+    html += '<div class="list">';
+    State.recurring.forEach(r=>{
+      const c = ACCOUNT_CATS.find(x=>x.key===r.cat)||{icon:'📦'};
+      html += '<div class="item'+(r.paused?' muted':'')+'">'+
+        '<div class="q-ic" style="width:40px;height:40px">'+c.icon+'</div>'+
+        '<div class="body"><div class="title">'+esc(r.name)+(r.paused?' <span class="badge" style="background:#e2e8f0;color:#64748b">已暂停</span>':'')+'</div>'+
+        '<div class="sub">'+(r.type==='income'?'收入':'支出')+' · '+esc(r.cat)+' · '+(r.cycle==='monthly'?'每月'+(r.day?r.day+'号':''):r.cycle==='weekly'?'每周':r.cycle)+(r.lastAdded?' · 上次入账 '+r.lastAdded:'')+'</div></div>'+
+        '<div class="title" style="color:'+(r.type==='income'?'var(--good)':'var(--bad)')+'">'+(r.type==='income'?'+':'-')+fmt(r.amount)+'</div>'+
+        '<button class="btn btn-sm" data-action="toggleRecurring" data-id="'+r.id+'">'+(r.paused?'恢复':'暂停')+'</button>'+
+        '<button class="btn btn-sm" data-action="editRecurring" data-id="'+r.id+'">编辑</button>'+
+        '<button class="btn btn-danger btn-sm" data-action="delRecurring" data-id="'+r.id+'">删除</button>'+
+        '</div>';
+    });
+    html += '</div>';
+  }
+  html += '</div></div>';
+
   $('#content').innerHTML = html;
   $('#accQ').addEventListener('input', e=>{ filters.account.q=e.target.value; PAGES.account(); const i=$('#accQ'); if(i){ i.focus(); i.setSelectionRange(i.value.length,i.value.length); } });
   $('#accType').addEventListener('change', e=>{ filters.account.type=e.target.value; PAGES.account(); });
@@ -1284,6 +1345,17 @@ ACTIONS.account = {
     confirmDialog('批量删除', '确定删除选中的 '+b.sel.size+' 条账目吗？', ()=>{
       State.accounts = State.accounts.filter(x=>!b.sel.has(x.id)); save('accounts'); b.sel.clear(); b.on=false; toast('已删除'); PAGES.account();
     }); },
+  // --- 月度预算 ---
+  openBudget(){ openBudgetModal(); },
+  // --- 固定收支 ---
+  addRecurring(){ openRecurringForm(null); },
+  editRecurring(id){ const r = State.recurring.find(x=>x.id===id); if(r) openRecurringForm(r); },
+  delRecurring(id){ confirmDialog('删除固定收支', '确定删除该固定收支条目吗？（已自动入账的账目不会被删除）', ()=>{
+    State.recurring = State.recurring.filter(x=>x.id!==id); save('recurring'); toast('已删除'); PAGES.account();
+  }); },
+  toggleRecurring(id){ const r = State.recurring.find(x=>x.id===id); if(!r) return;
+    r.paused = !r.paused; save('recurring'); toast(r.paused?'已暂停':'已恢复'); PAGES.account();
+  },
   // --- 资产管家 ---
   addAsset(){ formModal('添加银行卡', [
     {key:'name',label:'卡片名称（自定义）',placeholder:'例如：工资卡'},
@@ -1346,6 +1418,158 @@ function computeAccountStats(){
   });
   const years = Object.values(yearMap).sort((a,b)=> b.year-a.year);
   return { thisYearMonths, years, curYear:curY };
+}
+
+/* ----------------------------- 预算（按分类设月度上限） ----------------------------- */
+// 月份格式：YYYY-MM
+const curYM = () => {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+};
+// 计算某月各分类实际支出（含转账过滤？当前实现：仅支出；不计入固定收支生成的）
+function computeMonthExpenseByCat(yyyyMM){
+  const map = {};
+  State.accounts.forEach(t=>{
+    if(t.type!=='expense') return;
+    if((t.date||'').slice(0,7) !== yyyyMM) return;
+    map[t.cat] = (map[t.cat]||0) + t.amount;
+  });
+  return map;
+}
+// 计算预算进度（已花 / 预算 / 超支额）
+function computeBudgetProgress(yyyyMM){
+  const budgets = State.budgets[yyyyMM] || {};
+  const exp = computeMonthExpenseByCat(yyyyMM);
+  return Object.keys(budgets).map(cat=>{
+    const budget = budgets[cat]||0;
+    const used = exp[cat]||0;
+    return { cat, budget, used, over: used - budget, pct: budget>0 ? Math.min(100, Math.round(used/budget*100)) : 0 };
+  }).sort((a,b)=> b.used-a.used);
+}
+// 打开预算管理弹窗：逐分类设置金额
+function openBudgetModal(){
+  const yyyyMM = curYM();
+  if(!State.budgets[yyyyMM]) State.budgets[yyyyMM] = {};
+  const cur = State.budgets[yyyyMM];
+  const fields = ACCOUNT_CATS.map(c=>({
+    key:c.key, label:c.icon+' '+c.key, type:'number',
+    value: (cur[c.key]!=null ? cur[c.key] : ''),
+    placeholder:'不设则留空'
+  }));
+  fields.push({key:'_tip', label:'💡 留空表示该分类不设限额；按分类设预算可防止某类超支。', type:'text', value:'', placeholder:''});
+  formModal('📊 月度预算 · '+yyyyMM, fields, d=>{
+    ACCOUNT_CATS.forEach(c=>{
+      const v = parseFloat(d[c.key]);
+      if(isNaN(v) || v<=0){ delete cur[c.key]; }
+      else cur[c.key] = v;
+    });
+    State.budgets[yyyyMM] = cur;
+    save('budgets');
+    toast('预算已保存','good');
+    PAGES.account();
+  });
+}
+
+/* ----------------------------- 饼图（纯 SVG） ----------------------------- */
+const PIE_COLORS = ['#ff8a8a','#ffb878','#fdd55c','#82d4a6','#6cc4d1','#9a8cf0','#cf8ce0','#f48fb1','#a0aec0','#5a8dee'];
+function renderExpenseDonut(yyyyMM){
+  const exp = computeMonthExpenseByCat(yyyyMM);
+  const cats = Object.keys(exp).filter(k=> exp[k]>0).sort((a,b)=> exp[b]-exp[a]);
+  const total = cats.reduce((s,k)=> s+exp[k], 0);
+  if(total===0){
+    return '<div class="empty" style="padding:14px">本月还没有支出，记账后这里会出现分类占比</div>';
+  }
+  // SVG 圆环：r=70, cx/cy=100
+  let segments = '';
+  let acc = 0;
+  cats.forEach((c, i)=>{
+    const v = exp[c];
+    const frac = v/total;
+    const startA = acc * Math.PI * 2 - Math.PI/2;
+    const endA = (acc + frac) * Math.PI * 2 - Math.PI/2;
+    acc += frac;
+    const x1 = 100 + 70*Math.cos(startA), y1 = 100 + 70*Math.sin(startA);
+    const x2 = 100 + 70*Math.cos(endA), y2 = 100 + 70*Math.sin(endA);
+    const large = frac > 0.5 ? 1 : 0;
+    const fill = PIE_COLORS[i % PIE_COLORS.length];
+    segments += '<path d="M100,100 L'+x1.toFixed(1)+','+y1.toFixed(1)+' A70,70 0 '+large+' 1 '+x2.toFixed(1)+','+y2.toFixed(1)+' Z" fill="'+fill+'" stroke="#fff" stroke-width="1.5"/>';
+  });
+  // 图例
+  const legend = cats.map((c, i)=>{
+    const fill = PIE_COLORS[i % PIE_COLORS.length];
+    return '<div class="pie-leg"><span class="pie-dot" style="background:'+fill+'"></span><span class="pie-c">'+esc(c)+'</span><span class="pie-v">'+fmt(exp[c])+'</span><span class="pie-p">'+Math.round(exp[c]/total*100)+'%</span></div>';
+  }).join('');
+  return '<div class="pie-wrap"><svg viewBox="0 0 200 200" class="pie-svg">'+segments+'<circle cx="100" cy="100" r="42" fill="var(--card)"/><text x="100" y="96" text-anchor="middle" class="pie-tot">总支出</text><text x="100" y="118" text-anchor="middle" class="pie-amo">'+fmt(total)+'</text></svg><div class="pie-legend">'+legend+'</div></div>';
+}
+
+/* ----------------------------- 固定收支（周期入账） ----------------------------- */
+// 判断今日是否应入账（与 lastAdded 比较；cycle='monthly'：同月不入；'weekly'：同周不入；'day'：同日不入）
+function shouldAddRecurring(r, today){
+  if(r.paused) return false;
+  if(!r.lastAdded){ return true; }
+  const last = r.lastAdded;
+  if(r.cycle==='monthly'){
+    return today.slice(0,7) !== last.slice(0,7); // 跨月入账
+  }
+  if(r.cycle==='weekly'){
+    // 周一为周首；同周不入账
+    const w = d => { const day = (new Date(d+'T00:00:00')).getDay(); return new Date(d+'T00:00:00').getTime() - (day===0?6:day-1)*86400000; };
+    return Math.abs(w(today) - w(last)) >= 7*86400000;
+  }
+  return today !== last;
+}
+function addRecurringToday(today){
+  let added = 0;
+  State.recurring.forEach(r=>{
+    if(!shouldAddRecurring(r, today)) return;
+    State.accounts.unshift({
+      id: uid(), type:r.type, cat:r.cat, amount:r.amount,
+      note:(r.note?r.note:'')+' · [固定]', date:today, time: nowStr().slice(11,16),
+      created: Date.now(), recurringId:r.id
+    });
+    r.lastAdded = today;
+    added++;
+  });
+  if(added>0) save('recurring');
+  return added;
+}
+function openRecurringForm(r){
+  const isEdit = !!r;
+  const pre = r || { type:'expense', cat:'居家', amount:'', cycle:'monthly', day:1, name:'', note:'', paused:false };
+  formModal((isEdit?'编辑':'新增')+'固定收支', [
+    {key:'name',label:'名称',value:pre.name,placeholder:'例如：房租 / 工资 / Netflix'},
+    {key:'type',label:'类型',type:'select',value:pre.type,options:[{value:'expense',text:'支出'},{value:'income',text:'收入'}]},
+    {key:'cat',label:'分类',type:'select',value:pre.cat,options:ACCOUNT_CATS.map(c=>({value:c.key,text:c.key}))},
+    {key:'amount',label:'金额',type:'number',value:String(pre.amount||''),placeholder:'0.00'},
+    {key:'cycle',label:'周期',type:'select',value:pre.cycle,options:[{value:'monthly',text:'每月'},{value:'weekly',text:'每周'},{value:'day',text:'每天'}]},
+    {key:'day',label:'每月几号（仅每月）',type:'number',value:String(pre.day||1),placeholder:'1-31'},
+    {key:'note',label:'备注',value:pre.note||'',placeholder:'选填'}
+  ], d=>{
+    const amt = parseFloat(d.amount);
+    if(isNaN(amt)||amt<=0){ toast('请输入有效金额','bad'); return; }
+    if(!d.name){ toast('请输入名称','bad'); return; }
+    const obj = {
+      id: pre.id || uid(),
+      name: d.name,
+      type: d.type,
+      cat: d.cat,
+      amount: amt,
+      cycle: d.cycle,
+      day: parseInt(d.day,10)||1,
+      note: d.note||'',
+      paused: pre.paused||false,
+      lastAdded: pre.lastAdded||''
+    };
+    if(isEdit){
+      const i = State.recurring.findIndex(x=>x.id===pre.id);
+      if(i>=0) State.recurring[i] = obj;
+    } else {
+      State.recurring.push(obj);
+    }
+    save('recurring');
+    toast(isEdit?'已更新':'已新增','good');
+    PAGES.account();
+  });
 }
 
 const CAT_DICT = [
