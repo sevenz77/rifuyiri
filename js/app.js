@@ -980,8 +980,7 @@ PAGES.quota = function(){
       if(!b.on){
         if(view==='active'){
           html += '<div class="item-acts">'+
-            '<button class="btn btn-sm" data-action="renameQuota" data-id="'+q.id+'">改名</button>'+
-            '<button class="btn btn-sm" data-action="useQuota" data-id="'+q.id+'">记录消耗</button>'+
+            '<button class="btn btn-sm" data-action="openQuotaDetail" data-id="'+q.id+'">明细</button>'+
             '<button class="btn btn-sm" data-action="archiveQuota" data-id="'+q.id+'" title="归档：从主页隐藏，进「已归档」查看">📦 归档</button>'+
             '<button class="btn btn-sm" data-action="delQuota" data-id="'+q.id+'">删除</button>';
           html += '</div>';
@@ -1075,9 +1074,14 @@ function renderQuotaDetail(q){
   const pct = q.total>0 ? Math.round(used/q.total*100) : 0;
   const remaining = Math.max(q.total - q.consumed, 0);
   let html = '<div class="page">';
-  html += '<div class="card"><div class="card-title">'+icon('quota')+'额度明细'+
+  html += '<div class="card"><div class="card-title">'+icon('quota')+
+    '<span class="qd-name">'+esc(q.name)+'</span>'+
+    '<button class="btn btn-sm btn-soft" data-action="renameQuota" data-id="'+q.id+'" title="修改名称">✏️ 更名</button>'+
     '<span class="spacer" style="flex:1"></span>'+
     '<button class="btn btn-sm" data-action="quotaBack">‹ 返回</button></div>';
+  html += '<div class="toolbar">'+
+    '<button class="btn btn-primary btn-sm" data-action="useQuota" data-id="'+q.id+'">＋ 记录消耗</button>'+
+    '</div>';
   html += '<div class="stat-row">'+
     '<div class="stat"><div class="label">剩余额度</div><div class="val">'+fmt(remaining)+'</div></div>'+
     '<div class="stat"><div class="label">已消耗</div><div class="val">'+fmt(q.consumed)+'</div></div>'+
@@ -1087,7 +1091,7 @@ function renderQuotaDetail(q){
   html += '<div class="sub" style="margin:6px 2px 16px">消耗进度 '+pct+'%</div>';
   html += '<div class="card-title" style="margin-top:2px">消耗记录'+(q.records.length?('（'+q.records.length+' 笔）'):'')+'</div>';
   html += '<div class="list">';
-  if(q.records.length===0){ html += '<div class="empty"><div class="big">🧾</div>暂无消耗记录，去列表页「记录消耗」吧</div>'; }
+  if(q.records.length===0){ html += '<div class="empty"><div class="big">🧾</div>暂无消耗记录</div>'; }
   else {
     q.records.slice().reverse().forEach((r, i)=>{
       const ridx = q.records.length - 1 - i;
