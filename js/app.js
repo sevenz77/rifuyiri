@@ -1343,10 +1343,42 @@ function getUserCats(){
   return u;
 }
 function saveUserCats(u){ localStorage.setItem('wb_userCats', JSON.stringify(u)); }
-function getCats(type){
+/* 分类显示顺序持久化（内置+自定义合并排序，存 key 数组；拖拽/↑↓ 时写入） */
+function loadCatOrder(type){
+  try { const o = JSON.parse(localStorage.getItem('wb_catOrder')||'null'); if(o && Array.isArray(o[type])) return o[type]; } catch(e){}
+  return null;
+}
+function saveCatOrder(type, keys){
+  let o; try { o = JSON.parse(localStorage.getItem('wb_catOrder')||'{}')||{}; } catch(e){ o = {}; }
+  o[type] = keys;
+  localStorage.setItem('wb_catOrder', JSON.stringify(o));
+}
+function isBuiltinCat(type, key){
+  const b = type==='income' ? ACCOUNT_CATS_INC : ACCOUNT_CATS_EXP;
+  return b.some(x=>x.key===key);
+}
+function allCatsOfType(type){
   const builtin = type==='income' ? ACCOUNT_CATS_INC : ACCOUNT_CATS_EXP;
   const user    = (getUserCats()[type] || []).filter(c=> c && c.key && !builtin.find(x=>x.key===c.key));
   return builtin.concat(user);
+}
+function getCats(type){
+  const all = allCatsOfType(type);
+  const order = loadCatOrder(type);
+  if(!order || !order.length) return all;
+  const map = {}; all.forEach(c=> map[c.key] = c);
+  const out = [];
+  order.forEach(k=>{ if(map[k]){ out.push(map[k]); delete map[k]; } });
+  Object.keys(map).forEach(k=> out.push(map[k]));  // 补录未在顺序里的（新加的）分类
+  return out;
+}
+/* 拖拽/↑↓ 通用：把 fromKey 移动到 toKey 之前（按当前显示顺序数组） */
+function reorderCatsInOrder(type, fromKey, toKey){
+  const order = getCats(type).map(c=>c.key);
+  const from = order.indexOf(fromKey), to = order.indexOf(toKey);
+  if(from<0 || to<0 || from===to) return;
+  order.splice(to, 0, order.splice(from, 1)[0]);
+  saveCatOrder(type, order);
 }
 
 /* =============================================================================
@@ -1385,41 +1417,30 @@ let catManagerType = 'expense';  // 分类管理弹窗持久类型（避免重�
 function openCatManager(){
   catManagerType = catManagerType || acctQuickType;
   const viewType = catManagerType;
-  const builtin = viewType==='income' ? ACCOUNT_CATS_INC : ACCOUNT_CATS_EXP;
-  const user    = (getUserCats()[viewType]||[]).filter(c=> c && c.key && !builtin.find(x=>x.key===c.key));
+  const cats  = getCats(viewType);          // 已按 wb_catOrder 排序（内置+自定义合并）
+  const order = cats.map(c=>c.key);
 
   let body = '<h3>⚙️ 分类管理</h3>'+
     '<div class="ai-tabs" style="margin-bottom:14px">'+
       '<div class="ai-tab'+(viewType==='expense'?' active':'')+'" data-cm-type="expense">支出</div>'+
       '<div class="ai-tab'+(viewType==='income'?' active':'')+'" data-cm-type="income">收入</div>'+
     '</div>'+
-    '<div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">内置分类固定不可改；下方自定义分类可 ↑↓ 排序、删除或添加新分类</div>'+
+    '<div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">按住任意一行上下拖动即可排序（内置 / 自定义均可）；自定义分类还可 <span style="opacity:.85">↑↓</span>、删除或添加新分类</div>'+
     '<div id="cmList" class="cm-list">'+
-      '<div class="cm-section-title">� 内置（'+builtin.length+'）</div>'+
-      builtin.map((c,i)=>
-        '<div class="cm-row cm-builtin">'+
+      cats.map((c,i)=>{
+        const builtin = isBuiltinCat(viewType, c.key);
+        return '<div class="cm-row'+(builtin?' cm-builtin':'')+'" draggable="true" data-ckey="'+esc(c.key)+'">'+
           '<div class="cm-rank">'+(i+1)+'</div>'+
           '<div class="cm-icon">'+c.icon+'</div>'+
           '<div class="cm-name">'+esc(c.key)+'</div>'+
-          '<div class="cm-acts"><span class="cm-tag">内置</span></div>'+
-        '</div>'
-      ).join('')+
-      '<div class="cm-section-title">✨ 自定义（'+(user.length)+'）</div>'+
-      '<div id="cmUserRows">'+
-        (user.length===0 ? '<div class="cm-empty">还没有自定义分类，点下方「＋ 添加」</div>' :
-          user.map((c,i)=>
-            '<div class="cm-row" data-uidx="'+i+'">'+
-              '<div class="cm-rank">'+(i+1)+'</div>'+
-              '<div class="cm-icon">'+c.icon+'</div>'+
-              '<div class="cm-name">'+esc(c.key)+'</div>'+
-              '<div class="cm-acts">'+
-                '<button class="cm-btn" data-cm-act="up"   data-uidx="'+i+'" '+(i===0?'disabled':'')+' title="上移">↑</button>'+
-                '<button class="cm-btn" data-cm-act="down" data-uidx="'+i+'" '+(i===user.length-1?'disabled':'')+' title="下移">↓</button>'+
-                '<button class="cm-btn cm-btn-danger" data-cm-act="del" data-uidx="'+i+'" title="删除">✕</button>'+
-              '</div>'+
-            '</div>'
-          ).join(''))+
-      '</div>'+
+          '<div class="cm-acts">'+
+            (builtin ? '<span class="cm-tag">内置</span>'
+              : '<button class="cm-btn" data-cm-act="up"   data-ckey="'+esc(c.key)+'" '+(i===0?'disabled':'')+' title="上移">↑</button>'+
+                '<button class="cm-btn" data-cm-act="down" data-ckey="'+esc(c.key)+'" '+(i===order.length-1?'disabled':'')+' title="下移">↓</button>'+
+                '<button class="cm-btn cm-btn-danger" data-cm-act="del" data-ckey="'+esc(c.key)+'" title="删除">✕</button>')+
+          '</div>'+
+        '</div>';
+      }).join('')+
     '</div>'+
     '<div class="cm-add">'+
       '<button class="btn btn-primary btn-sm" data-cm-act="add">＋ 添加新分类</button>'+
@@ -1433,40 +1454,40 @@ function openCatManager(){
     closeModal(); openCatManager();
   });
   $('#modalRoot').querySelector('[data-x="cancel"]').onclick = ()=>{ delete $('#modalRoot').dataset.lock; closeModal(); };
-  /* 上下移 */
+  /* 拖拽排序（内置+自定义通用） */
+  let dragKey = null;
+  $$('#modalRoot .cm-row[draggable]').forEach(el=>{
+    el.addEventListener('dragstart', e=>{ dragKey = el.dataset.ckey; el.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; try{ e.dataTransfer.setData('text/plain', dragKey); }catch(_){} });
+    el.addEventListener('dragend', ()=>{ el.classList.remove('dragging'); $$('#modalRoot .cm-row').forEach(r=> r.classList.remove('drag-over')); });
+    el.addEventListener('dragover', e=>{ e.preventDefault(); e.dataTransfer.dropEffect='move'; if(el.dataset.ckey!==dragKey) el.classList.add('drag-over'); });
+    el.addEventListener('dragleave', ()=>{ el.classList.remove('drag-over'); });
+    el.addEventListener('drop', e=>{ e.preventDefault(); el.classList.remove('drag-over');
+      const tk = el.dataset.ckey;
+      if(dragKey && tk && dragKey!==tk){ reorderCatsInOrder(viewType, dragKey, tk); closeModal(); openCatManager(); }
+    });
+  });
+  /* 上下移（作用于合并顺序数组） */
   $$('#modalRoot [data-cm-act="up"], #modalRoot [data-cm-act="down"]').forEach(el=> el.onclick = (e)=>{
     e.stopPropagation();
-    const idx = parseInt(el.dataset.uidx, 10);
-    const u = getUserCats();
-    const arr = (u[viewType]||[]).filter(c=> c && c.key && !builtin.find(x=>x.key===c.key));
-    if(idx<0 || idx>=arr.length) return;
+    const key = el.dataset.ckey;
+    const ord = getCats(viewType).map(c=>c.key);
+    const idx = ord.indexOf(key); if(idx<0) return;
     const j = el.dataset.cmAct==='up' ? idx-1 : idx+1;
-    if(j<0 || j>=arr.length) return;
-    [arr[idx], arr[j]] = [arr[j], arr[idx]];
-    /* 同步写回原数组（含去重） */
-    const merged = u[viewType] || [];
-    const idxInMerged = (k)=> merged.findIndex(x=> x && x.key===arr[k].key);
-    const a = idxInMerged(idx), b = idxInMerged(j);
-    if(a>=0 && b>=0){
-      [merged[a], merged[b]] = [merged[b], merged[a]];
-      u[viewType] = merged;
-      saveUserCats(u);
-    }
+    if(j<0 || j>=ord.length) return;
+    reorderCatsInOrder(viewType, key, ord[j]);
     closeModal(); openCatManager();
   });
   /* 删除自定义分类 */
   $$('#modalRoot [data-cm-act="del"]').forEach(el=> el.onclick = (e)=>{
     e.stopPropagation();
-    const idx = parseInt(el.dataset.uidx, 10);
+    const key = el.dataset.ckey;
     const u = getUserCats();
-    const arr = (u[viewType]||[]).filter(c=> c && c.key && !builtin.find(x=>x.key===c.key));
-    if(idx<0 || idx>=arr.length) return;
-    /* 检查是否有账目引用此分类，避免数据孤儿 */
-    const key = arr[idx].key;
     const used = State.accounts.some(t=> t && t.cat===key);
     const goDel = ()=>{
       u[viewType] = (u[viewType]||[]).filter(c=> c.key !== key);
       saveUserCats(u);
+      const ord = loadCatOrder(viewType);
+      if(ord){ const i = ord.indexOf(key); if(i>=0){ ord.splice(i,1); saveCatOrder(viewType, ord); } }
       closeModal(); openCatManager();
     };
     if(used){
@@ -1506,6 +1527,8 @@ function openAddCatForm(viewType){
     u[viewType] = u[viewType] || [];
     u[viewType].push({ key:name, icon:d.icon||'📦' });
     saveUserCats(u);
+    const ord = loadCatOrder(viewType);   // 新分类默认排到末尾（仅在已有自定义顺序时）
+    if(ord){ ord.push(name); saveCatOrder(viewType, ord); }
     closeModal();
     openCatManager();  // 回到管理页看到刚加的分类
     toast('已添加：'+name,'good');
@@ -2065,12 +2088,14 @@ PAGES.accountAsset = function(){
         '<div class="acct-ic">'+(a.icon||(isLiab?'🧾':'💳'))+'</div>'+
         '<div class="acct-body">'+
           '<div class="acct-name">'+esc(a.name)+(isLiab?' <span class="badge liab">负债</span>':'')+defTag+'</div>'+
-          '<div class="acct-sub">'+esc(a.bank||'—')+' · 更新于 '+(a.updated||'—')+'</div>'+
+          '<div class="acct-sub">'+esc(a.bank||'—')+' · 更新于 '+(a.updated||'—')+
+            ((a.log && a.log[0]) ? ' · 上次'+(a.log[0].d>0?'+':'')+fmt(a.log[0].d) : '')+'</div>'+
         '</div>'+
         '<div class="acct-bal" style="color:'+(isLiab?'var(--bad)':'var(--primary)')+'">'+fmt(a.balance)+'</div>'+
         '<div class="acct-acts">'+
           '<button class="btn btn-sm'+(a.isDefaultPay?' btn-primary':' btn-soft')+'" data-action="setPay" data-id="'+a.id+'" title="'+(a.isDefaultPay?'取消默认支出卡':'设为默认支出卡')+'">💳 支</button>'+
           '<button class="btn btn-sm'+(a.isDefaultIncome?' btn-primary':' btn-soft')+'" data-action="setInc" data-id="'+a.id+'" title="'+(a.isDefaultIncome?'取消默认收入卡':'设为默认收入卡')+'">💰 收</button>'+
+          '<button class="btn btn-sm btn-soft" data-action="adjustAsset" data-id="'+a.id+'" title="增减卡片余额（每次变动记录时间）">🔧 调整</button>'+
           '<button class="btn btn-sm" data-action="editAsset" data-id="'+a.id+'">编辑</button>'+
           '<button class="btn btn-danger btn-sm" data-action="delAsset" data-id="'+a.id+'">删除</button>'+
         '</div>'+
@@ -2249,6 +2274,28 @@ const ACCOUNT_ACTIONS = {
       State.assets = State.assets.filter(x=>x.id!==id);
       save('assets'); toast('已删除'); refreshAcct();
     }); },
+  /* 单卡余额调整（增 / 减，每次变动写入时间 + 变动记录） */
+  adjustAsset(id){
+    const a = State.assets.find(x=>x.id===id); if(!a) return;
+    const isLiab = a.kind==='liability';
+    formModal('🔧 调整余额 · '+a.name, [
+      { key:'amount', label:'变动金额', type:'number', value:'', placeholder:'0.00' },
+      { key:'dir', label:'方向', type:'select', value:'add', options:[{value:'add',text:'＋ 增加余额'}, {value:'sub',text:'− 减少余额'}] },
+      { key:'note', label:'备注', value:'', placeholder:'选填（如：工资到账 / 还款 / 利息）' }
+    ], d=>{
+      const amt = round2(parseFloat(d.amount));
+      if(isNaN(amt) || amt<=0){ toast('请输入有效金额','bad'); return; }
+      const sign = d.dir==='sub' ? -1 : 1;
+      a.balance = round2(a.balance + sign*amt);
+      a.updated = nowStr();
+      a.log = a.log || [];
+      a.log.unshift({ t: nowStr(), d: sign*amt, note:(d.note||'').trim() });
+      if(a.log.length>50) a.log.length = 50;
+      save('assets');
+      toast((sign>0?'已增加 ':'已减少 ')+fmt(amt)+(isLiab?'（负债变动）':''), 'good');
+      refreshAcct();
+    });
+  },
   smartAdd(){ openSmartModal(); },
   ocrAdd(){ startOcrImport(); }
 };
