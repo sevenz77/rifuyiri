@@ -981,7 +981,6 @@ PAGES.quota = function(){
         if(view==='active'){
           html += '<div class="item-acts">'+
             '<button class="btn btn-sm" data-action="useQuota" data-id="'+q.id+'">记录</button>'+
-            '<button class="btn btn-sm" data-action="openQuotaDetail" data-id="'+q.id+'">明细</button>'+
             '<button class="btn btn-sm" data-action="archiveQuota" data-id="'+q.id+'" title="归档：从主页隐藏，进「已归档」查看">📦 归档</button>'+
             '<button class="btn btn-sm" data-action="delQuota" data-id="'+q.id+'">删除</button>';
           html += '</div>';
@@ -1029,9 +1028,23 @@ ACTIONS.quota = {
   delQuota(id){ confirmDialog('删除额度', '确定删除该额度吗？相关消耗记录也会清除。', ()=>{
     State.quotas = State.quotas.filter(x=>x.id!==id); save('quotas'); toast('已删除'); PAGES.quota();
   }); },
-  resetAll(){ confirmDialog('重置消耗', '确定将所有额度的「已消耗」清零吗？', ()=>{
-    State.quotas.forEach(q=>{ q.consumed=0; q.records=[]; }); save('quotas'); toast('已重置','good'); PAGES.quota();
-  }); },
+  resetAll(){
+    const b = batch.quota || { on:false, sel:new Set() };
+    // 仅作用于「活跃」额度（已归档额度不受重置消耗影响；归档视图也无此按钮）
+    if(b.on && b.sel.size===0){ toast('请先选择要重置的额度','bad'); return; }
+    const targets = b.on
+      ? State.quotas.filter(q => !q.archived && b.sel.has(q.id))
+      : State.quotas.filter(q => !q.archived);
+    if(targets.length===0){ toast('没有可重置的额度','bad'); return; }
+    const names = targets.map(q=>q.name).join('、');
+    confirmDialog('重置消耗', '确定将「'+names+'」的已消耗清零吗？', ()=>{
+      targets.forEach(q=>{ q.consumed=0; q.records=[]; });
+      save('quotas');
+      if(b.on){ b.sel.clear(); b.on=false; }
+      toast('已重置 '+targets.length+' 个额度','good');
+      PAGES.quota();
+    });
+  },
   batchToggle(){ toggleBatch('quota'); },
   sel(id){ toggleSel('quota', id); },
   batchDel(){ const b=batch.quota; if(!b||b.sel.size===0){ toast('请先选择','bad'); return; }
