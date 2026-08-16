@@ -939,12 +939,12 @@ PAGES.quota = function(){
     '<button class="btn btn-sm" data-action="pwdSet" title="密码设置">🔐 '+(hasPwd?'已加密':'未加密')+'</button></div>';
   if(view==='active'){
     html += '<div class="toolbar">'+
-      '<button class="btn btn-primary btn-sm" data-action="addQuota">＋ 新增额度</button>'+
-      '<button class="btn btn-sm" data-action="batchToggle">批量操作</button>'+
-      (b.on ? '<button class="btn btn-danger btn-sm" data-action="batchDel">删除选中 ('+b.sel.size+')</button>' : '')+
+      '<button class="btn btn-primary btn-sm" data-action="addQuota">＋ 新增</button>'+
+      '<button class="btn btn-sm" data-action="batchToggle">批量</button>'+
+      (b.on ? '<button class="btn btn-danger btn-sm" data-action="batchDel">删除选中</button>' : '')+
       '<span class="spacer"></span>'+
       '<button class="btn btn-sm'+(archivedCount?' btn-ghost':'')+'" data-action="viewArchivedQuota"'+(archivedCount?'':' disabled')+' title="查看已归档的额度">🗄️ 已归档'+(archivedCount?' ('+archivedCount+')':'')+'</button>'+
-      '<button class="btn btn-sm" data-action="resetAll">重置消耗</button>'+
+      '<button class="btn btn-sm" data-action="resetAll">重置</button>'+
       '</div>';
   } else {
     // 归档视图：禁止批量/消耗/重置，只允许恢复/删除
