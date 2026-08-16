@@ -22,10 +22,12 @@ const State = {
   assets:   DB.get('assets', []),   // 资产管家：银行卡余额记录
   rec:      DB.get('rec', {date:'', movie:'', tv:'', book:''}),
   settings: DB.get('settings', { theme:'light', avatar:'', quotaPwd:'', accountPwd:'', lastExport:'', aiUsage:{} }),
-  checkins: DB.get('checkins', [])  // 打卡日志：['YYYY-MM-DD', ...]，仅追加；dailyReset 不触碰
+  checkins: DB.get('checkins', []),  // 打卡日志：['YYYY-MM-DD', ...]，仅追加；dailyReset 不触碰
+  checkinItems: DB.get('checkinItems', {}) // 打卡具体事项：{date: {items: ['任务名',...], at: timestamp}}；超过 90 天 items 自动清空，date 保留
 };
 const save = k => DB.set(k, State[k]);
 const saveSettings = () => DB.set('settings', State.settings);
+let quickKind='long'; // 底部快捷添加栏当前选中的任务类型（long 长期 / short 短期）
 
 /* ----------------------------- 打卡日志（修复本周打卡次日消失 bug）----------------------------- */
 // 一次性迁移：从历史任务的 doneDate 重建 checkins（覆盖 dailyReset 把 done=false 但 doneDate 仍保留的情况）
@@ -36,10 +38,46 @@ const saveSettings = () => DB.set('settings', State.settings);
   if(dirty){ State.checkins = Array.from(set).sort(); save('checkins'); }
 })();
 // 记录某一天的打卡（幂等：同日重复调用不重复添加）；打卡日志永不删除
-function recordCheckin(ds){ ds = ds || todayStr();
+// 同时把当天完成的任务快照存进 checkinItems（如果还没有），便于事后查看
+function recordCheckin(ds){
+  ds = ds || todayStr();
+  // 1. 打卡日期入栈（保留原有行为）
   if(!State.checkins.includes(ds)){ State.checkins.push(ds); save('checkins'); }
+  // 2. 同步记录当天已办事项快照（仅首次）
+  if(!State.checkinItems[ds] || !Array.isArray(State.checkinItems[ds].items)){
+    const items = State.tasks
+      .filter(t => t.done && t.doneDate===ds)
+      .map(t => ({ text:t.text, kind: t.kind==='short'?'week':(t.kind||'long') }));
+    State.checkinItems[ds] = { items: items, at: Date.now() };
+    save('checkinItems');
+  }
 }
 const hasCheckin = ds => State.checkins.includes(ds);
+// 获取某日打卡事项（可能因 3 个月清理返回空数组）
+const getCheckinItems = ds => {
+  const o = State.checkinItems[ds];
+  return (o && Array.isArray(o.items)) ? o.items : [];
+};
+
+/* 3 个月清理：超过 90 天的 items 清空但保留 date（打卡状态不动）
+ * 运行时机：① 启动时（紧跟工具函数定义后立即调用）② 每次调用 recordCheckin 前
+ */
+function pruneOldCheckinItems(){
+  const today = new Date(todayStr()+'T00:00:00');
+  let dirty = false;
+  Object.keys(State.checkinItems).forEach(ds=>{
+    const d = new Date(ds+'T00:00:00');
+    const diff = Math.floor((today - d)/86400000);
+    if(diff > 90){
+      const o = State.checkinItems[ds];
+      if(o && Array.isArray(o.items) && o.items.length>0){
+        State.checkinItems[ds] = { items: [], at: o.at || 0, pruned: true };
+        dirty = true;
+      }
+    }
+  });
+  if(dirty) save('checkinItems');
+}
 
 /* ----------------------------- 工具函数 ----------------------------- */
 const $  = s => document.querySelector(s);
@@ -47,6 +85,8 @@ const $$ = s => Array.from(document.querySelectorAll(s));
 const pad = n => (n<10?'0':'')+n;
 const todayStr = () => { const d=new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); };
 const nowStr  = () => { const d=new Date(); return todayStr()+' '+pad(d.getHours())+':'+pad(d.getMinutes()); };
+// 启动时清理 3 个月前打卡事项（仅清 items，保留 date）
+pruneOldCheckinItems();
 const monthStr= () => todayStr().slice(0,7);
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,7);
@@ -293,8 +333,18 @@ function setPwd(key, val){
 function dailyReset(){
   const t = todayStr();
   if(State.settings._lastDay !== t){
-    State.tasks.forEach(x=>{ if(x.doneDate !== t) x.done = false; });
-    save('tasks');
+    let changed = false;
+    State.tasks.forEach(x=>{ if(x.doneDate !== t){ x.done = false; changed = true; } });
+    // 过期任务清理（按自然日，非精确168h）：临时=仅当天；一周=当天起7日内（第8天自动取消）；旧'short'兼容按一周；长期永久
+    const base = new Date(t+'T00:00:00');
+    const kept = State.tasks.filter(x=>{
+      const k = x.kind==='short' ? 'week' : (x.kind||'long');
+      if(k==='temp') return x.createdDate===t;
+      if(k==='week'){ const diff = Math.round((base - new Date(x.createdDate+'T00:00:00'))/86400000); return diff>=0 && diff<7; }
+      return true; // long 永久
+    });
+    if(kept.length !== State.tasks.length){ State.tasks = kept; changed = true; }
+    if(changed) save('tasks');
     State.settings._lastDay = t;
     saveSettings();
   }
@@ -359,12 +409,53 @@ function importData(e){
  * 交互路由（事件委托）
  * =========================================================================== */
 function onContentClick(e){
+  if(window.__justDragged){ window.__justDragged = false; return; } // 拖拽松手后的 click 忽略
   const el = e.target.closest('[data-action]');
   if(!el) return;
   const a = el.dataset.action;
   const id = el.dataset.id;
   const page = currentPage;
   (ACTIONS[page] && ACTIONS[page][a] ? ACTIONS[page][a] : (ACTIONS._all[a]||function(){}))(id, el);
+}
+
+/* ---- 任务拖拽：同类型内自由重排（PointerEvent 兼容手机） ---- */
+let __drag = null;
+function bindTodoDrag(){
+  $$('#content .drag-handle').forEach(h=>{
+    h.addEventListener('pointerdown', e=>{
+      const item = h.closest('.item');
+      if(!item || !item.dataset.id) return;
+      e.preventDefault();
+      __drag = { item, kind:item.dataset.kind, sx:e.clientX, sy:e.clientY, moved:false };
+      window.addEventListener('pointermove', __onDragMove);
+      window.addEventListener('pointerup', __onDragUp);
+    });
+  });
+}
+function __onDragMove(e){
+  if(!__drag) return;
+  const dx = Math.abs(e.clientX-__drag.sx), dy = Math.abs(e.clientY-__drag.sy);
+  if(!__drag.moved){ if(dx+dy < 6) return; __drag.moved = true; __drag.item.classList.add('dragging'); }
+  const sibs = [...$$( '#content .item[data-kind="'+__drag.kind+'"]' )].filter(x=> x!==__drag.item);
+  let target = null;
+  for(const s of sibs){ const r = s.getBoundingClientRect(); if(e.clientY < r.top + r.height/2){ target = s; break; } }
+  const parent = __drag.item.parentNode;
+  if(target) parent.insertBefore(__drag.item, target); else parent.appendChild(__drag.item);
+}
+function __onDragUp(){
+  if(!__drag) return;
+  window.removeEventListener('pointermove', __onDragMove);
+  window.removeEventListener('pointerup', __onDragUp);
+  if(__drag.moved){
+    __drag.item.classList.remove('dragging');
+    const ids = [...$$( '#content .item[data-kind="'+__drag.kind+'"]' )].map(x=> x.dataset.id);
+    let i = 0;
+    State.tasks.forEach(t=>{ if((t.kind==='short'?'week':(t.kind||'long'))===__drag.kind){ t.order = i++; } });
+    save('tasks');
+    window.__justDragged = true;
+    PAGES.todo();
+  }
+  __drag = null;
 }
 
 /* 通用：批量选择切换 */
@@ -445,12 +536,23 @@ function getVitalityStats(){
   return {streak, monthDone};
 }
 PAGES.todo = function(){
-  if(!filters.todo) filters.todo = { q:'', status:'all' };
+  if(!filters.todo) filters.todo = { q:'', status:'all', kind:'all' };
   const f = filters.todo;
+  // 渲染前再清一次过期任务（兜底：跨天未 reload 时 dailyReset 可能未跑）
+  const t0 = todayStr(); const base0 = new Date(t0+'T00:00:00');
+  const kept0 = State.tasks.filter(x=>{
+    const k = x.kind==='short' ? 'week' : (x.kind||'long');
+    if(k==='temp') return x.createdDate===t0;
+    if(k==='week'){ const diff = Math.round((base0 - new Date(x.createdDate+'T00:00:00'))/86400000); return diff>=0 && diff<7; }
+    return true;
+  });
+  if(kept0.length !== State.tasks.length){ State.tasks = kept0; save('tasks'); }
   let list = State.tasks.slice();
   if(f.status==='done') list = list.filter(t=>t.done && t.doneDate===todayStr());
   if(f.status==='undone') list = list.filter(t=>!(t.done && t.doneDate===todayStr()));
   if(f.q) list = list.filter(t=> t.text.toLowerCase().includes(f.q.toLowerCase()));
+  if(f.kind==='long')  list = list.filter(t=> (t.kind||'long')==='long');
+  if(f.kind==='short') list = list.filter(t=> (t.kind||'long')==='short');
   const b = batch.todo || {on:false,sel:new Set()};
   const doneCount = State.tasks.filter(t=>t.done && t.doneDate===todayStr()).length;
   const totalCount = State.tasks.length;
@@ -475,34 +577,52 @@ PAGES.todo = function(){
     '<span>本月已活跃 <b>'+vs.monthDone+'</b> 天</span>'+
     '</div>';
 
-  /* ---- 任务列表 ---- */
+  /* ---- 任务列表（按 临时→一周→长期 顺序出，组内可拖拽重排；不再显示分组小标题，颜色/徽章已自带区分） ---- */
+  const GROUPS = [
+    {key:'temp'}, {key:'week'}, {key:'long'}
+  ];
+  const normKind = t => (t.kind==='short') ? 'week' : (t.kind||'long');
+  const KTAG = { long:'长期（永久保留）', week:'一周（7天有效，第8天自动取消）', temp:'临时（仅当天，次日消失）' };
   html += '<div class="list todo-list">';
   if(list.length===0){
     html += '<div class="empty todo-empty"><div class="big">📝</div><p>还没有任务，添加一个吧～</p></div>';
   } else {
-    list.forEach(t=>{
-      const done = t.done && t.doneDate===todayStr();
-      html += '<div class="item'+(done?' done':'')+'">';
-      if(b.on) html += '<div class="check'+(b.sel.has(t.id)?' on':'')+'" data-action="sel" data-id="'+t.id+'">'+(b.sel.has(t.id)?'✓':'')+'</div>';
-      html += '<div class="check'+(done?' on':'')+'" data-action="toggle" data-id="'+t.id+'">'+(done?'✓':'')+'</div>';
-      html += '<div class="body"><div class="title">'+esc(t.text)+'</div></div>';
-      if(!b.on) html += '<button class="btn btn-sm btn-ghost" data-action="editTask" data-id="'+t.id+'">编辑</button><button class="btn btn-danger btn-sm" data-action="delTask" data-id="'+t.id+'">删除</button>';
-      html += '</div>';
+    GROUPS.forEach(g=>{
+      const items = list.filter(t=> normKind(t)===g.key ).sort((a,b)=> (a.order??1e9)-(b.order??1e9));
+      if(items.length===0) return;
+      items.forEach(t=>{
+        const done = t.done && t.doneDate===todayStr();
+        const k = normKind(t);
+        const kcls = k==='long'?'item-long':(k==='week'?'item-week':'item-temp');
+        const klabel = k==='long'?'长期':(k==='week'?'一周':'临时');
+        html += '<div class="item '+kcls+(done?' done':'')+'" data-id="'+t.id+'" data-kind="'+k+'">';
+        if(b.on) html += '<div class="check'+(b.sel.has(t.id)?' on':'')+'" data-action="sel" data-id="'+t.id+'">'+(b.sel.has(t.id)?'✓':'')+'</div>';
+        if(!b.on) html += '<div class="drag-handle" title="拖动排序">⠿</div>';
+        html += '<div class="check'+(done?' on':'')+'" data-action="toggle" data-id="'+t.id+'">'+(done?'✓':'')+'</div>';
+        html += '<div class="body"><div class="title">'+esc(t.text)+'<span class="kind-badge '+k+'">'+klabel+'</span></div></div>';
+        if(!b.on) html += '<button class="btn btn-sm btn-ghost" data-action="editTask" data-id="'+t.id+'">编辑</button><button class="btn btn-danger btn-sm" data-action="delTask" data-id="'+t.id+'">删除</button>';
+        html += '</div>';
+      });
     });
   }
   html += '</div>';
 
-  /* ---- 底部固定输入栏 ---- */
+  /* ---- 底部固定输入栏 + 规则说明 ---- */
   html += '<div class="todo-input-bar">'+
-    '<input class="input todo-input" id="todoInput" placeholder="添加新任务..." data-action="quickAddTask">'+
-    '<button class="btn btn-primary todo-add-btn" data-action="addTask">＋</button>'+
+    '<div class="kind-toggle">'+
+      '<button class="kt-btn'+(quickKind==='long'?' on':'')+'" data-action="setKind" data-kind="long">长期</button>'+
+      '<button class="kt-btn'+(quickKind==='week'?' on':'')+'" data-action="setKind" data-kind="week">一周</button>'+
+      '<button class="kt-btn'+(quickKind==='temp'?' on':'')+'" data-action="setKind" data-kind="temp">临时</button>'+
+    '</div>'+
+    '<input class="input todo-input" id="todoInput" placeholder="任务内容（当前：'+(quickKind==='long'?'长期=永久保留':(quickKind==='week'?'一周=7天后自动取消':'临时=次日消失'))+'）">'+
+    '<button class="btn btn-primary todo-add-btn" data-action="quickAddTask">＋</button>'+
     '</div>';
 
-  /* ---- 本月活力图 ---- */
-  html += '<div class="card"><div class="card-title">📅 本月活力图</div>';
-  html += '<div class="mc-head">'+
-    '<div class="mc-title">'+d.getFullYear()+' 年 '+pad(d.getMonth()+1)+' 月</div>'+
-    '<div class="mc-stat">🔥 连续 '+vs.streak+' 天 · ✨ 已活跃 '+vs.monthDone+' 天</div>'+
+  /* ---- 本月活力图（年月合并到卡片标题行，节省垂直空间） ---- */
+  html += '<div class="card"><div class="card-title">📅 本月活力图'+
+    '<span class="mc-title-inline">'+d.getFullYear()+' 年 '+pad(d.getMonth()+1)+' 月</span>'+
+    '<span class="spacer" style="flex:1"></span>'+
+    '<span class="mc-stat-inline">🔥 '+vs.streak+' 天 · ✨ '+vs.monthDone+' 天</span>'+
     '</div>';
   html += '<div class="mc-weekrow"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>';
   html += '<div class="mc-grid">';
@@ -522,7 +642,7 @@ PAGES.todo = function(){
     else cls += ' mc-empty';
     html += '<div class="'+cls+'" data-action="openDay" data-day="'+ds+'">';
     html += '<div class="mc-num">'+day+'</div>';
-    if(isToday) html += '<div class="mc-tag">今天</div>';
+    if(isToday){ /* 今日格只用紫底高亮区分，不再重复显示文字"今天" */ }
     else if(checked) html += '<div class="mc-tick">✓</div>';
     html += '</div>';
   }
@@ -531,33 +651,64 @@ PAGES.todo = function(){
   /* 搜索筛选（折叠区域） */
   html += '<div class="todo-filters">'+
     '<input class="input" id="todoQ" placeholder="搜索事项…" value="'+esc(f.q)+'">'+
+    '<select class="select" id="todoKind"><option value="all"'+(f.kind==='all'?' selected':'')+'>全部类型</option><option value="long"'+(f.kind==='long'?' selected':'')+'>长期</option><option value="week"'+(f.kind==='week'?' selected':'')+'>一周</option><option value="temp"'+(f.kind==='temp'?' selected':'')+'>临时</option></select>'+
     '<select class="select" id="todoStatus"><option value="all"'+(f.status==='all'?' selected':'')+'>全部</option><option value="undone"'+(f.status==='undone'?' selected':'')+'>未完成</option><option value="done"'+(f.status==='done'?' selected':'')+'>已完成</option></select>'+
     (b.on ? '<button class="btn btn-danger btn-sm" data-action="batchDel">删除选中 ('+b.sel.size+')</button><button class="btn btn-sm" data-action="batchDone">标记完成</button>' : '')+
     '</div>';
 
   html += '</div>';
   $('#content').innerHTML = html;
+  bindTodoDrag();
 
   // 快捷添加：回车触发
   const ti = $('#todoInput');
   if(ti){ ti.addEventListener('keydown', e=>{ if(e.key==='Enter'){ const v=ti.value.trim(); if(v){ ACTIONS.todo.quickAdd(v); ti.value=''; }} }); }
   $('#todoQ').addEventListener('input', e=>{ filters.todo.q=e.target.value; PAGES.todo(); const i=$('#todoQ'); if(i){ i.focus(); i.setSelectionRange(i.value.length,i.value.length); } });
   $('#todoStatus').addEventListener('change', e=>{ filters.todo.status=e.target.value; PAGES.todo(); });
+  $('#todoKind').addEventListener('change', e=>{ filters.todo.kind=e.target.value; PAGES.todo(); });
 };
 
 ACTIONS.todo = {
   quickAdd(text){ if(!text){ toast('请输入内容','bad'); return; }
-    State.tasks.push({id:uid(), text:text, done:false, doneDate:''});
-    save('tasks'); toast('已添加','good'); PAGES.todo(); },
-  addTask(){ formModal('新增事项', [{key:'text',label:'事项内容',placeholder:'例如：晨跑30分钟'}], d=>{
+    State.tasks.push({id:uid(), text:text, done:false, doneDate:'', kind:quickKind, createdDate:todayStr()});
+    save('tasks'); toast(quickKind==='long'?'已添加·长期（永久保留）':(quickKind==='week'?'已添加·一周（7天后自动取消）':'已添加·临时（次日消失）'),'good'); PAGES.todo(); },
+  setKind(_id, el){ quickKind = el.dataset.kind;
+    $$('#content .kt-btn').forEach(b=> b.classList.toggle('on', b.dataset.kind===quickKind));
+    const ti = $('#todoInput');
+    if(ti){ ti.placeholder = '任务内容（当前：'+(quickKind==='long'?'长期=永久保留':(quickKind==='week'?'一周=7天后自动取消':'临时=次日消失'))+'）'; } },
+  quickAddTask(_id, _el){
+    const ti = $('#todoInput');
+    const text = (ti?ti.value:'').trim();
+    if(!text){ toast('请输入任务内容','bad'); ti && ti.focus(); return; }
+    State.tasks.push({id:uid(), text:text, done:false, doneDate:'', kind:quickKind, createdDate:todayStr()});
+    save('tasks');
+    if(ti) ti.value='';
+    toast(quickKind==='long'?'已添加·长期（永久保留）':(quickKind==='week'?'已添加·一周（7天后自动取消）':'已添加·临时（次日消失）'),'good');
+    PAGES.todo();
+  },
+  addTask(){ formModal('新增事项', [
+    {key:'text',label:'事项内容',placeholder:'例如：晨跑30分钟'},
+    {key:'kind',label:'任务类型',type:'select',value:'long',options:[
+      {value:'long',text:'长期（永久保留，不会自动消失）'},
+      {value:'week',text:'一周（当天~第7天有效，第8天自动取消）'},
+      {value:'temp',text:'临时（仅当天，次日消失）'}
+    ]}
+  ], d=>{
     if(!d.text){ toast('请输入内容','bad'); return; }
-    State.tasks.push({id:uid(), text:d.text, done:false, doneDate:''});
+    State.tasks.push({id:uid(), text:d.text, done:false, doneDate:'', kind:d.kind||'long', createdDate:todayStr()});
     save('tasks'); toast('已添加','good'); PAGES.todo();
   }); },
   editTask(id){ const t = State.tasks.find(x=>x.id===id); if(!t) return;
-    formModal('编辑事项', [{key:'text',label:'事项内容',value:t.text}], d=>{
+    formModal('编辑事项', [
+      {key:'text',label:'事项内容',value:t.text},
+      {key:'kind',label:'任务类型',type:'select',value:(t.kind==='short'?'week':(t.kind||'long')),options:[
+        {value:'long',text:'长期（永久保留，不会自动消失）'},
+        {value:'week',text:'一周（当天~第7天有效，第8天自动取消）'},
+        {value:'temp',text:'临时（仅当天，次日消失）'}
+      ]}
+    ], d=>{
       if(!d.text){ toast('请输入内容','bad'); return; }
-      t.text = d.text; save('tasks'); toast('已更新','good'); PAGES.todo();
+      t.text = d.text; t.kind = d.kind||'long'; save('tasks'); toast('已更新','good'); PAGES.todo();
     }); },
   delTask(id){ confirmDialog('删除事项', '确定删除该事项吗？此操作不可撤销。', ()=>{
     State.tasks = State.tasks.filter(x=>x.id!==id); save('tasks'); toast('已删除'); PAGES.todo();
@@ -577,6 +728,9 @@ ACTIONS.todo = {
     State.tasks.forEach(x=>{ if(b.sel.has(x.id)){ x.done=true; x.doneDate=todayStr(); } });
     recordCheckin();
     save('tasks'); toast('已标记完成','good'); PAGES.todo(); },
+  resetOrder(){ confirmDialog('恢复默认排序','确定清除当前自定义顺序、恢复「临时 → 一周 → 长期」默认排列吗？', ()=>{
+    State.tasks.forEach(t=>{ t.order = undefined; }); save('tasks'); toast('已恢复默认排序','good'); PAGES.todo();
+  }); },
   openDay(_id, el){
     const ds = el.dataset.day;
     const wd = ['日','一','二','三','四','五','六'];
@@ -604,8 +758,31 @@ ACTIONS.todo = {
     } else {
       // 过去
       if(checked){
-        body += '<div class="day-stat">🔥 这天已打卡（历史记录只记日期，不记具体事项）</div>';
-        body += '<div class="day-section"><div class="day-empty">如需追记往事，请在「便签」模块加一条</div></div>';
+        const ci = State.checkinItems[ds];
+        const isPruned = ci && ci.pruned;
+        const items = isPruned ? [] : (ci && Array.isArray(ci.items) ? ci.items : []);
+        if(items.length>0){
+          body += '<div class="day-stat">🔥 这天已打卡 · 已完成 <b>'+items.length+'</b> 项</div>';
+          body += '<div class="day-section"><div class="day-label">✅ 当天已完成</div>';
+          items.forEach(it => {
+            const kind = it.kind || 'long';
+            body += '<div class="day-row day-row-kind-'+kind+'">'+
+              '<span class="day-row-text">'+esc(it.text)+'</span>'+
+              '<span class="day-row-kind-badge kb-'+kind+'">'+(kind==='long'?'长期':kind==='week'?'一周':'临时')+'</span>'+
+              '</div>';
+          });
+          body += '</div>';
+          // 距离今天多少天
+          const diff = Math.floor((new Date(todayStr()+'T00:00:00') - new Date(ds+'T00:00:00'))/86400000);
+          if(diff > 30){
+            body += '<div class="day-tip">⏳ 距今 '+diff+' 天 · 详情保留至 90 天</div>';
+          }
+        } else {
+          body += '<div class="day-stat">🔥 这天已打卡'+(isPruned?' · 具体事项已自动清理（保留 3 个月）':'')+'</div>';
+          body += '<div class="day-section"><div class="day-empty">'+
+            (isPruned?'详情已清理，如需追记可在「便签」加一条':'历史记录只记日期，不记具体事项（此日打卡在新功能上线前）')+
+            '</div></div>';
+        }
       } else {
         body += '<div class="day-stat">😴 这天未打卡</div>';
         body += '<div class="day-section"><div class="day-empty">无记录</div></div>';
@@ -705,49 +882,79 @@ ACTIONS.notes = {
  * =========================================================================== */
 PAGES.quota = function(){
   if(qDetailId){ const q = State.quotas.find(x=>x.id===qDetailId); if(q) return renderQuotaDetail(q); qDetailId=null; }
-  if(!filters.quota) filters.quota = { q:'' };
+  if(!filters.quota) filters.quota = { q:'', _view:'active' };
   const f = filters.quota;
+  const view = f._view || 'active';
   let list = State.quotas.slice();
+  if(view==='active') list = list.filter(q=> !q.archived);
+  else list = list.filter(q=>  q.archived);
   if(f.q) list = list.filter(q=> q.name.toLowerCase().includes(f.q.toLowerCase()));
   const b = batch.quota || {on:false,sel:new Set()};
   const hasPwd = !!State.settings.quotaPwd;
+  const archivedCount = State.quotas.filter(q=>q.archived).length;
 
   let html = '<div class="page">';
   html += '<div class="card"><div class="card-title">'+icon('quota')+'额度追踪'+
     '<span class="spacer" style="flex:1"></span>'+
     '<button class="btn btn-sm" data-action="pwdSet" title="密码设置">🔐 '+(hasPwd?'已加密':'未加密')+'</button></div>';
-  html += '<div class="toolbar">'+
-    '<button class="btn btn-primary btn-sm" data-action="addQuota">＋ 新增额度</button>'+
-    '<button class="btn btn-sm" data-action="batchToggle">批量操作</button>'+
-    (b.on ? '<button class="btn btn-danger btn-sm" data-action="batchDel">删除选中 ('+b.sel.size+')</button>' : '')+
-    '<span class="spacer"></span><button class="btn btn-sm" data-action="resetAll">重置消耗</button>'+
-    '</div>';
-  html += '<div class="search"><input class="input" id="quotaQ" placeholder="搜索额度名称…" value="'+esc(f.q)+'"></div>';
+  if(view==='active'){
+    html += '<div class="toolbar">'+
+      '<button class="btn btn-primary btn-sm" data-action="addQuota">＋ 新增额度</button>'+
+      '<button class="btn btn-sm" data-action="batchToggle">批量操作</button>'+
+      (b.on ? '<button class="btn btn-danger btn-sm" data-action="batchDel">删除选中 ('+b.sel.size+')</button>' : '')+
+      '<span class="spacer"></span>'+
+      '<button class="btn btn-sm'+(archivedCount?' btn-ghost':'')+'" data-action="viewArchivedQuota"'+(archivedCount?'':' disabled')+' title="查看已归档的额度">🗄️ 已归档'+(archivedCount?' ('+archivedCount+')':'')+'</button>'+
+      '<button class="btn btn-sm" data-action="resetAll">重置消耗</button>'+
+      '</div>';
+  } else {
+    // 归档视图：禁止批量/消耗/重置，只允许恢复/删除
+    html += '<div class="toolbar">'+
+      '<button class="btn btn-primary btn-sm" data-action="viewActiveQuota">↩ 返回额度追踪</button>'+
+      '<span class="spacer"></span>'+
+      '<span class="muted" style="font-size:13px;align-self:center">归档视图 · 共 '+archivedCount+' 项</span>'+
+      '</div>';
+  }
+  html += '<div class="search"><input class="input" id="quotaQ" placeholder="'+(view==='active'?'搜索额度名称…':'在已归档中搜索…')+'" value="'+esc(f.q)+'"></div>';
   html += '<div class="list">';
-  if(list.length===0){ html += '<div class="empty"><div class="big">🎯</div>还没有额度，新增一个开始追踪吧</div>'; }
+  if(list.length===0){
+    if(view==='active'){
+      html += '<div class="empty"><div class="big">🎯</div>还没有额度，新增一个开始追踪吧</div>';
+    } else {
+      html += '<div class="empty"><div class="big">🗄️</div><p>已归档里是空的</p><p style="color:var(--muted);font-size:13px">把不再需要追踪的额度归档，主页就看不见了。需要时还能在这里恢复</p></div>';
+    }
+  }
   else {
     list.forEach(q=>{
       const used = Math.min(q.consumed, q.total);
       const pct = q.total>0 ? Math.round(used/q.total*100) : 0;
       const warn = pct>=85;
       const realIdx = State.quotas.findIndex(x=>x.id===q.id);
-      html += '<div class="item quota-item">';
-      if(b.on) html += '<div class="check'+(b.sel.has(q.id)?' on':'')+'" data-action="sel" data-id="'+q.id+'">'+(b.sel.has(q.id)?'✓':'')+'</div>';
-      const openAttr = b.on ? '' : ' data-action="openQuotaDetail" data-id="'+q.id+'"';
-      const arrow = b.on ? '' : '<span class="arrow">›</span>';
+      html += '<div class="item quota-item'+(q.archived?' archived':'')+'">';
+      if(b.on && view==='active') html += '<div class="check'+(b.sel.has(q.id)?' on':'')+'" data-action="sel" data-id="'+q.id+'">'+(b.sel.has(q.id)?'✓':'')+'</div>';
+      const openAttr = (b.on || view==='archived') ? '' : ' data-action="openQuotaDetail" data-id="'+q.id+'"';
+      const arrow = (b.on || view==='archived') ? '' : '<span class="arrow">›</span>';
       html += '<div class="body"'+openAttr+'>'+
-        '<div class="title">'+esc(q.name)+arrow+'</div>'+
-        '<div class="sub">已用 '+fmt(q.consumed)+' / 总额 '+fmt(q.total)+' · 剩余 '+fmt(Math.max(q.total-q.consumed,0))+'</div>'+
+        '<div class="title">'+esc(q.name)+arrow+(q.archived?'<span class="badge badge-archived" style="margin-left:6px">已归档</span>':'')+'</div>'+
+        '<div class="sub">已用 '+fmt(q.consumed)+' / 总额 '+fmt(q.total)+' · 剩余 '+fmt(Math.max(q.total-q.consumed,0))+(q.archived&&q.archivedAt?' · 归档于 '+q.archivedAt.slice(0,10):'')+'</div>'+
         '<div class="bar'+(warn?' warn':'')+'" style="margin-top:8px"><i style="width:'+pct+'%"></i></div>';
       if(!b.on){
-        html += '<div class="item-acts">'+
-          '<button class="btn btn-sm" data-action="useQuota" data-id="'+q.id+'">记录消耗</button>'+
-          '<button class="btn btn-danger btn-sm" data-action="delQuota" data-id="'+q.id+'">删除</button>';
-        if(!f.q){
-          if(realIdx>0) html += '<button class="btn btn-sm btn-ghost" data-action="moveQuota" data-id="'+q.id+'" data-dir="up">↑ 上移</button>';
-          if(realIdx<State.quotas.length-1) html += '<button class="btn btn-sm btn-ghost" data-action="moveQuota" data-id="'+q.id+'" data-dir="down">↓ 下移</button>';
+        if(view==='active'){
+          html += '<div class="item-acts">'+
+            '<button class="btn btn-sm" data-action="useQuota" data-id="'+q.id+'">记录消耗</button>'+
+            '<button class="btn btn-sm btn-ghost" data-action="archiveQuota" data-id="'+q.id+'" title="归档：从主页隐藏，进「已归档」查看">📦 归档</button>'+
+            '<button class="btn btn-danger btn-sm" data-action="delQuota" data-id="'+q.id+'">删除</button>';
+          if(!f.q){
+            if(realIdx>0) html += '<button class="btn btn-sm btn-ghost" data-action="moveQuota" data-id="'+q.id+'" data-dir="up">↑ 上移</button>';
+            if(realIdx<State.quotas.length-1) html += '<button class="btn btn-sm btn-ghost" data-action="moveQuota" data-id="'+q.id+'" data-dir="down">↓ 下移</button>';
+          }
+          html += '</div>';
+        } else {
+          // 归档视图：恢复 + 删除（不动 lock 字段，密码设置在 toolbar 里仍然生效）
+          html += '<div class="item-acts">'+
+            '<button class="btn btn-sm btn-primary" data-action="unarchiveQuota" data-id="'+q.id+'" title="恢复到主页追踪">♻️ 恢复</button>'+
+            '<button class="btn btn-danger btn-sm" data-action="delQuota" data-id="'+q.id+'">🗑️ 删除</button>'+
+            '</div>';
         }
-        html += '</div>';
       }
       html += '</div>';
       html += '</div>';
@@ -791,6 +998,18 @@ ACTIONS.quota = {
   batchDel(){ const b=batch.quota; if(!b||b.sel.size===0){ toast('请先选择','bad'); return; }
     confirmDialog('批量删除', '确定删除选中的 '+b.sel.size+' 个额度吗？', ()=>{
       State.quotas = State.quotas.filter(x=>!b.sel.has(x.id)); save('quotas'); b.sel.clear(); b.on=false; toast('已删除'); PAGES.quota();
+    }); },
+  viewArchivedQuota(){ filters.quota._view = 'archived'; PAGES.quota(); },
+  viewActiveQuota(){ filters.quota._view = 'active'; PAGES.quota(); },
+  archiveQuota(id){ const q = State.quotas.find(x=>x.id===id); if(!q) return;
+    confirmDialog('归档额度', '确定归档「'+q.name+'」吗？归档后主页不可见，可在「已归档」里恢复。', ()=>{
+      q.archived = true; q.archivedAt = nowStr();
+      save('quotas'); toast('已归档 · '+(q.locked?'上锁状态已保留':'未上锁'),'good'); PAGES.quota();
+    }); },
+  unarchiveQuota(id){ const q = State.quotas.find(x=>x.id===id); if(!q) return;
+    confirmDialog('恢复额度', '确定把「'+q.name+'」恢复到主页追踪吗？', ()=>{
+      q.archived = false; q.archivedAt = '';
+      save('quotas'); toast('已恢复','good'); PAGES.quota();
     }); },
   openQuotaDetail(id){ qDetailId = id; PAGES.quota(); },
   quotaBack(){ qDetailId = null; PAGES.quota(); },
@@ -877,7 +1096,7 @@ PAGES.account = function(){
     '</div></div>';
 
   // 快捷分类
-  html += '<div class="card"><div class="card-title">⚡ 快捷记一笔</div><div class="quick-grid">';
+  html += '<div class="card"><div class="card-title">⚡ 快捷记一笔<span style="flex:1"></span><button class="btn btn-sm btn-primary" data-action="smartAdd">➕ 智能输入</button></div><div class="quick-grid">';
   ACCOUNT_CATS.forEach(c=>{ html += '<div class="quick" data-action="quickAdd" data-cat="'+c.key+'"><div class="q-ic">'+c.icon+'</div>'+c.key+'</div>'; });
   html += '</div></div>';
 
@@ -885,6 +1104,7 @@ PAGES.account = function(){
   html += '<div class="card"><div class="card-title">'+icon('account')+'收支明细</div>';
   html += '<div class="toolbar">'+
     '<button class="btn btn-primary btn-sm" data-action="addTx">＋ 记一笔</button>'+
+    '<button class="btn btn-sm" data-action="ocrAdd" title="拍照/选图，自动识别金额与日期（不存图）">📷 图片记账</button>'+
     '<button class="btn btn-sm" data-action="batchToggle">批量操作</button>'+
     (b.on ? '<button class="btn btn-danger btn-sm" data-action="batchDel">删除选中 ('+b.sel.size+')</button>' : '')+
     '</div>';
@@ -908,6 +1128,45 @@ PAGES.account = function(){
     });
   }
   html += '</div></div>';
+
+  /* ---- 账本统计聚合（按年 + 今年按月） ---- */
+  const stats = computeAccountStats();
+  html += '<div class="card"><div class="card-title">📊 '+stats.curYear+' 年月度统计</div>';
+  if(stats.thisYearMonths.some(m=> m.exp>0||m.inc>0)){
+    html += '<div class="mstat-grid">';
+    stats.thisYearMonths.forEach((m,i)=>{
+      const isCur = (i===(new Date()).getMonth()); // 当前月高亮
+      const empty = (m.exp===0 && m.inc===0);
+      html += '<div class="mstat-cell'+(isCur?' on':'')+(empty?' empty':'')+'">'+
+        '<div class="mstat-m">'+m.m+'月</div>'+
+        '<div class="mstat-num">'+(m.exp>0?fmt(-m.exp):'—')+'</div>'+
+        '<div class="mstat-sub">收 '+(m.inc>0?fmt(m.inc):'—')+'</div>'+
+        '</div>';
+    });
+    html += '</div>';
+    html += '<div class="mstat-legend">支出（红）· 收入（绿）· 当前月高亮</div>';
+  } else {
+    html += '<div class="empty" style="padding:14px">'+stats.curYear+' 年还没有账目记录，记账后这里会出现月度统计</div>';
+  }
+  html += '</div>';
+
+  html += '<div class="card"><div class="card-title">📅 年度统计</div>';
+  if(stats.years.length===0){
+    html += '<div class="empty" style="padding:14px">还没有任何账目记录，从顶部记一笔开始吧</div>';
+  } else {
+    html += '<div class="ystat-list">';
+    stats.years.forEach(y=>{
+      const balance = y.inc - y.exp;
+      html += '<div class="ystat-row">'+
+        '<div class="ystat-y">'+y.year+' 年</div>'+
+        '<div class="ystat-e">支 '+fmt(y.exp)+'</div>'+
+        '<div class="ystat-i">收 '+fmt(y.inc)+'</div>'+
+        '<div class="ystat-b'+(balance<0?' neg':'')+'">结余 '+fmt(balance)+'</div>'+
+        '</div>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
 
   // 资产管家（放最后）
   const totalAsset = State.assets.reduce((s,a)=>s+(a.balance||0),0);
@@ -998,8 +1257,229 @@ ACTIONS.account = {
     }); },
   delAsset(id){ confirmDialog('删除银行卡', '确定删除该银行卡记录吗？', ()=>{
     State.assets = State.assets.filter(x=>x.id!==id); save('assets'); toast('已删除'); PAGES.account();
-  }); }
+  }); },
+  smartAdd(){ openSmartModal(); },
+  ocrAdd(){ startOcrImport(); }
 };
+
+/* =============================================================================
+ * 自然语言记账解析引擎（智能输入）
+ * =========================================================================== */
+
+/* 账本页统计聚合：按年 + 今年按月 */
+function computeAccountStats(){
+  const curY = (new Date()).getFullYear();
+  // 初始化今年12月（0支出+0收入）
+  const thisYearMonths = [];
+  for(let m=1; m<=12; m++){
+    thisYearMonths.push({ m, exp:0, inc:0 });
+  }
+  const yearMap = {};
+  State.accounts.forEach(t=>{
+    if(!t.date || t.date.length<7) return;
+    const y = parseInt(t.date.slice(0,4),10);
+    const m = parseInt(t.date.slice(5,7),10);
+    if(isNaN(y) || isNaN(m)) return;
+    if(!yearMap[y]) yearMap[y] = { year:y, exp:0, inc:0 };
+    if(t.type==='expense'){
+      yearMap[y].exp += t.amount;
+      if(y===curY) thisYearMonths[m-1].exp += t.amount;
+    } else if(t.type==='income'){
+      yearMap[y].inc += t.amount;
+      if(y===curY) thisYearMonths[m-1].inc += t.amount;
+    }
+  });
+  const years = Object.values(yearMap).sort((a,b)=> b.year-a.year);
+  return { thisYearMonths, years, curYear:curY };
+}
+
+const CAT_DICT = [
+  [/(工资|薪水|薪酬|月薪|底薪|提成|奖金|绩效|年终|分红|补贴|社保返|公积金)/, '工资'],
+  [/(红包|份子|随礼|礼金)/, '红包'],
+  // 餐饮：含早午晚餐、宵夜、吃喝类启发式（吃XX/喝XX 默认餐饮，除非是吃药/吃亏 等非饮食场景）
+  [/(早饭|早茶|早餐|午饭|午餐|晚饭|晚餐|夜宵|宵夜|吃饭|就餐|聚餐|外卖|食堂|餐厅|饭馆|火锅|烧烤|麻辣|面馆|米饭|面食|面条|包子|饺子|粥|零食|水果|奶茶|咖啡|饮料|酒|菜|餐饮|食|糖水|甜品|蛋糕|面包|点心)/, '餐饮'],
+  // 吃喝启发式：「吃」+ 1~2字非医非亏；「喝」+ 1~2字非医（水/汤/茶/奶/酒等统统算餐饮；吃药/吃亏不算）
+  [/^吃[^药亏损字\d]{1,3}/, '餐饮'],
+  [/^喝[^药液剂\d]{1,3}/, '餐饮'],
+  [/(打车|出租|滴滴|网约车|地铁|公交|客车|高铁|火车|动车|机票|飞机|油费|加油|停车|过路|高速|骑行|单车|摩的|出行|交通)/, '交通'],
+  [/(买|购|下单|京东|淘宝|天猫|拼多多|超市|便利店|商店|商场|衣服|服饰|鞋|包|数码|手机|电脑|家电|日用品|化妆品|护肤|百货)/, '购物'],
+  [/(书|课本|教材|课|培训|学费|网课|辅导|考试|资料|文具|学习|进修)/, '学习'],
+  [/(电影|游戏|会员|视频|小说|漫画|追星|演唱会|演出|游乐|游乐园|旅游|景点|门票|KTV|酒吧|娱乐)/, '娱乐'],
+  [/(水费|电费|燃气|煤气|物业|房租|网费|宽带|家具|装修|清洁|家政|维修|居家)/, '居家'],
+  [/(药|医院|挂号|看诊|门诊|急诊|体检|牙|口腔|眼镜|医疗)/, '医疗']
+];
+function cnNumToNum(s){
+  const d = {'零':0,'一':1,'二':2,'两':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9,'十':10,'百':100,'千':1000,'万':10000,'亿':1e8};
+  if(/[零一二两三四五六七八九十百千万亿]/.test(s)===false) return NaN;
+  let total=0, sec=0, num=0;
+  for(const ch of s){ if(d[ch]===undefined) continue; const v=d[ch];
+    if(v<10){ num = (num===0 && ch!=='零')? v : (num*10+v); }
+    else if(v<10000){ sec += (num||1)*v; num=0; }
+    else { total += (sec||0)*v; sec=0; num=0; }
+  }
+  return total + sec + num;
+}
+function parseAmount(s){
+  const m = s.match(/([0-9]+(?:[.][0-9]+)?)/);
+  if(m) return parseFloat(m[1]);
+  const cn = s.match(/[零一二两三四五六七八九十百千万亿]+/);
+  if(cn) return cnNumToNum(cn[0]);
+  return NaN;
+}
+function parseDate(s){
+  const today = new Date(); const y=today.getFullYear(), m=today.getMonth(), d=today.getDate();
+  let dt = new Date(y,m,d);
+  if(/今天/.test(s)) dt=new Date(y,m,d);
+  else if(/昨天|昨日/.test(s)) dt=new Date(y,m,d-1);
+  else if(/前天/.test(s)) dt=new Date(y,m,d-2);
+  else if(/大前天/.test(s)) dt=new Date(y,m,d-3);
+  else {
+    const wk = /(?:周|星期)([一二三四五六日天])/.exec(s);
+    if(wk){ const map={'日':0,'天':0,'一':1,'二':2,'三':3,'四':4,'五':5,'六':6}; const target=map[wk[1]];
+      let diff=(target - today.getDay()+7)%7; if(diff===0) diff=7; dt=new Date(y,m,d-diff); }
+    else { const md = /([0-9]{1,2})月([0-9]{1,2})[日号]?/.exec(s);
+      if(md){ const mm=parseInt(md[1]), dd=parseInt(md[2]); if(mm>=1&&mm<=12&&dd>=1&&dd<=31) dt=new Date(y,mm-1,dd); }
+      else { const ymd = /([0-9]{4})[-/.]([0-9]{1,2})[-/.]([0-9]{1,2})/.exec(s);
+        if(ymd) dt=new Date(parseInt(ymd[1]),parseInt(ymd[2])-1,parseInt(ymd[3])); } }
+  }
+  return dt.getFullYear()+'-'+pad(dt.getMonth()+1)+'-'+pad(dt.getDate());
+}
+function parseType(s){
+  if(/(收|到账|薪资|工资|薪|提成|奖金|绩效|分红|返现|返利|退款|报销|转入|盈利|赚|进账|红包收入|收红包|收到红包)/.test(s)) return 'income';
+  if(/(发红包|支出|花费|花了|消费|付款|支付|购买|买|付了)/.test(s)) return 'expense';
+  return 'expense';
+}
+function parseOne(s){
+  s = (s||'').trim(); if(!s) return null;
+  const date = parseDate(s);
+  const noDate = s.replace(/(今天|昨天|昨日|前天|大前天|周[一二三四五六日天]|星期[一二三四五六日天]|[0-9]{1,2}月[0-9]{1,2}[日号]?|[0-9]{4}[-/.][0-9]{1,2}[-/.][0-9]{1,2})/g, ' ');
+  const amount = parseAmount(noDate);
+  if(isNaN(amount)||amount<=0) return null;
+  const type = parseType(noDate);
+  let cat = '其他';
+  for(const kv of CAT_DICT){ if(kv[0].test(noDate)){ cat=kv[1]; break; } }
+  const CAT_WORDS = CAT_DICT.map(kv=>kv[1]).join('|');
+  let note = noDate
+    .replace(/[0-9]+(?:[.][0-9]+)?/g,'')
+    .replace(/[元块毛角分￥$]/g,'')
+    .replace(/(收|到账|薪资|工资|薪|提成|奖金|绩效|分红|返现|返利|退款|报销|转入|盈利|赚|进账|红包收入|收红包|收到红包|发红包|支出|花费|花了|消费|付款|支付|购买|买|付了)/g,'')
+    .replace(new RegExp(CAT_WORDS,'g'),'')
+    .replace(/[　 \t]+/g,'')
+    .slice(0,20);
+  return {type, cat, amount: Math.round(amount*100)/100, date, note};
+}
+function parseBulk(text){
+  const segsRaw = [];
+  const anchorRe = /今天|昨天|昨日|前天|大前天|周[一二三四五六日天]|星期[一二三四五六日天]|[0-9]{1,2}月[0-9]{1,2}[日号]?|[0-9]{4}[-/.][0-9]{1,2}[-/.][0-9]{1,2}/g;
+  const anchors = [...(text||'').matchAll(anchorRe)];
+  if(anchors.length>=2){
+    for(let i=0;i<anchors.length;i++){
+      const start = anchors[i].index;
+      const end = (i+1<anchors.length)? anchors[i+1].index : (text||'').length;
+      const seg = (text||'').slice(start,end).trim();
+      if(seg) segsRaw.push(seg);
+    }
+  } else {
+    const norm = (text||'').replace(/[　 \t]+/g,' ').replace(/\\r\\n/g,'\\n').replace(/\\r/g,'\\n');
+    const bySep = norm.split(/[；;，,\\n、]+/).map(x=>x.trim()).filter(Boolean);
+    if(bySep.length>=2){ segsRaw.push(...bySep); }
+    else if((text||'').trim()){ segsRaw.push((text||'').trim()); }
+  }
+  const recs = [];
+  segsRaw.forEach(seg=>{ const r = parseOne(seg); if(r) recs.push(r); });
+  return recs;
+}
+function openSmartModal(prefill){
+  const tip = '支持一次录入多笔：用分隔符（； ; ， , 、 换行）或日期词（今天 / 昨天 / 前天）隔开。金额请使用阿拉伯数字，例如 100、10.5。点击每条左侧分类标签可改分类。';
+  const body =
+    '<h3>🪄 智能记账</h3>'+
+    '<div class="smart-tip">'+esc(tip)+'</div>'+
+    '<textarea id="smartInput" class="input smart-area" rows="5" placeholder="例如：\n今天早餐10；打车20；晚餐20\n或：\n今天早餐10 今天打车20 今天发红包100"></textarea>'+
+    '<div class="smart-preview-title">实时解析（<span id="smartCount">0</span> 笔）</div>'+
+    '<div id="smartPreview" class="smart-preview"><div class="smart-empty">在上方输入，这里会实时显示解析结果</div></div>'+
+    '<div class="modal-actions">'+
+      '<button class="btn" data-x="cancel">取消</button>'+
+      '<button class="btn btn-primary" id="smartOk" data-x="ok">录入 0 笔</button>'+
+    '</div>';
+  openModal(body);
+  const ta = $('#smartInput');
+  if(prefill){ ta.value = prefill; }
+  // 解析结果存这里（含用户手动改的 cat）
+  let parsed = [];
+  const render = ()=>{
+    parsed = parseBulk(ta.value);
+    const pv = $('#smartPreview'); const cnt = $('#smartCount'); const ok = $('#smartOk');
+    cnt.textContent = parsed.length; ok.textContent = '录入 '+parsed.length+' 笔';
+    if(parsed.length===0){ pv.innerHTML = '<div class="smart-empty">没有可解析的记录，请检查格式（金额用阿拉伯数字）</div>'; return; }
+    pv.innerHTML = parsed.map((r,i)=> '<div class="smart-row '+(r.type==='income'?'income':'')+'" data-i="'+i+'">'+
+      '<span class="smart-cat" data-action="changeCat" data-i="'+i+'" title="点击更改分类">'+esc(r.cat)+'</span>'+
+      '<span class="smart-note">'+esc(r.note||'—')+'</span>'+
+      '<span class="smart-date">'+esc(r.date)+'</span>'+
+      '<span class="smart-amt">'+(r.type==='income'?'+':'-')+fmt(r.amount)+'</span>'+
+    '</div>').join('');
+  };
+  ta.addEventListener('input', render);
+  render();
+  // ============== 分类切换 ==============
+  const onPvClick = (e)=>{
+    const tg = e.target.closest('[data-action="changeCat"]');
+    if(!tg) return;
+    const i = parseInt(tg.dataset.i,10);
+    const r = parsed[i]; if(!r) return;
+    const opts = ACCOUNT_CATS.map(c=> '<span class="cat-pick '+(c.key===r.cat?'on':'')+'" data-c="'+esc(c.key)+'">'+c.icon+' '+esc(c.key)+'</span>').join('');
+    openModal('<h3>📂 选择分类</h3>'+
+      '<div class="cat-grid">'+opts+'</div>'+
+      '<div class="modal-actions"><button class="btn" data-x="cancel">取消</button></div>');
+    $('#modalRoot').querySelectorAll('.cat-pick').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        parsed[i].cat = el.dataset.c;
+        closeModal();
+        render();
+      });
+    });
+    $('#modalRoot').querySelector('[data-x="cancel"]').onclick = closeModal;
+  };
+  $('#smartPreview').addEventListener('click', onPvClick);
+  $('#modalRoot').querySelector('[data-x="cancel"]').onclick = closeModal;
+  $('#modalRoot').querySelector('[data-x="ok"]').onclick = ()=>{
+    if(parsed.length===0){ toast('没有可解析的记录','bad'); return; }
+    parsed.forEach(r=> State.accounts.push({id:uid(), type:r.type, cat:r.cat, amount:r.amount, note:r.note, date:r.date, time:nowStr(), created:Date.now()}));
+    save('accounts'); closeModal(); toast('已录入 '+parsed.length+' 笔','good'); PAGES.account();
+  };
+}
+
+/* ============== 图片 OCR 记账（独立入口，不并入 + 填表） ============== */
+let _ocrEngineReady = false;
+function startOcrImport(){
+  const pick = ()=>{
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = 'image/*'; inp.capture = 'environment';
+    inp.onchange = async (e)=>{
+      const f = e.target.files && e.target.files[0];
+      if(!f) return;
+      if(!window.Tesseract){ toast('OCR 引擎未就绪，请稍候重试','bad'); return; }
+      toast('⏳ 正在识别图片（首次较慢，请稍候）…','');
+      try{
+        const { data } = await window.Tesseract.recognize(f, 'chi_sim+eng', { logger: ()=>{} });
+        const text = (data && data.text) ? data.text : '';
+        const cleaned = text.split(/\n+/).map(x=>x.trim()).filter(Boolean).join('\n');
+        openSmartModal(cleaned);  // 识别文字送进智能记账弹窗解析
+        toast('已识别 '+cleaned.split(/\n+/).filter(Boolean).length+' 行，请核对分类','good');
+      } catch(err){
+        toast('识别失败：'+(err.message||err),'bad');
+      }
+    };
+    inp.click();
+  };
+  if(_ocrEngineReady){ pick(); return; }
+  toast('⏳ 正在加载识别引擎…','');
+  const s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js';
+  s.onload = ()=>{ _ocrEngineReady = true; pick(); };
+  s.onerror = ()=>{ toast('OCR 引擎加载失败，请检查网络','bad'); };
+  document.head.appendChild(s);
+  setTimeout(()=>{ if(!_ocrEngineReady) toast('引擎加载较慢，请重试','bad'); }, 15000);
+}
 
 /* =============================================================================
  * 页面 5：AI+ 工具网络（参照截图：Tab筛选 · 分类分组 · 更新时间）
