@@ -609,9 +609,16 @@ PAGES.todo = function(){
   const nowDow = d.getDay();
 
   let html = '<div class="page">';
-  /* ---- 页面标题 + 批量操作 ---- */
-  html += '<div class="todo-header"><h2 class="todo-title">今日清单</h2>';
-  html += '<button class="btn btn-ghost btn-sm" data-action="batchToggle">'+(b.on?'退出批量':'批量操作')+'</button></div>';
+  /* ---- 页面标题 + 批量操作工具栏（批量时显示删除选中/标记完成/退出，普通时仅显示批量入口） ---- */
+  html += '<div class="todo-header"><h2 class="todo-title">今日清单</h2><div class="todo-header-acts">';
+  if(b.on){
+    html += '<button class="btn btn-danger btn-sm" data-action="batchDel">🗑 删除选中 ('+b.sel.size+')</button>';
+    html += '<button class="btn btn-sm" data-action="batchDone">✓ 标记完成 ('+b.sel.size+')</button>';
+    html += '<button class="btn btn-ghost btn-sm" data-action="batchToggle">退出批量</button>';
+  } else {
+    html += '<button class="btn btn-ghost btn-sm" data-action="batchToggle">批量操作</button>';
+  }
+  html += '</div></div>';
 
   /* ---- 日期 + 打卡统计条 ---- */
   html += '<div class="todo-date">'+dateStr+'</div>';
@@ -640,11 +647,25 @@ PAGES.todo = function(){
         const k = normKind(t);
         const kcls = k==='long'?'item-long':(k==='week'?'item-week':'item-temp');
         const klabel = k==='long'?'长期':(k==='week'?'一周':'临时');
-        html += '<div class="item '+kcls+(done?' done':'')+'" data-id="'+t.id+'" data-kind="'+k+'">';
+        // 重复周期徽章
+        const rep = t.repeat||'none';
+        const repBadge = rep==='daily' ? '<span class="meta-badge rep-daily" title="每天重复">🔁 日</span>'
+                       : rep==='weekly' ? '<span class="meta-badge rep-weekly" title="每周重复">🔁 周</span>'
+                       : rep==='monthly' ? '<span class="meta-badge rep-monthly" title="每月重复">🔁 月</span>' : '';
+        // 截止时间 + 逾期判断（仅今天有效，过期即逾期）
+        let dueBadge = '';
+        let overdue = false;
+        if(t.dueTime && /^\d{2}:\d{2}$/.test(t.dueTime)){
+          const nowM = nowStr(); // 'YYYY-MM-DD HH:MM:SS'
+          const todayTime = nowM.slice(0,10) + ' ' + t.dueTime + ':00';
+          if(!done && nowM > todayTime) overdue = true;
+          dueBadge = '<span class="meta-badge '+(overdue?'due-overdue':'due-ok')+'" title="截止时间">'+(overdue?'⏰ 已逾期 ':'⏰ ')+t.dueTime+'</span>';
+        }
+        html += '<div class="item '+kcls+(done?' done':'')+(overdue?' overdue':'')+'" data-id="'+t.id+'" data-kind="'+k+'">';
         if(b.on) html += '<div class="check'+(b.sel.has(t.id)?' on':'')+'" data-action="sel" data-id="'+t.id+'">'+(b.sel.has(t.id)?'✓':'')+'</div>';
         if(!b.on) html += '<div class="drag-handle" title="拖动排序">⠿</div>';
-        html += '<div class="check'+(done?' on':'')+'" data-action="toggle" data-id="'+t.id+'">'+(done?'✓':'')+'</div>';
-        html += '<div class="body"><div class="title">'+esc(t.text)+'<span class="kind-badge '+k+'">'+klabel+'</span></div></div>';
+        if(!b.on) html += '<div class="check'+(done?' on':'')+'" data-action="toggle" data-id="'+t.id+'">'+(done?'✓':'')+'</div>';
+        html += '<div class="body"><div class="title">'+esc(t.text)+'<span class="kind-badge '+k+'">'+klabel+'</span>'+repBadge+dueBadge+'</div></div>';
         if(!b.on) html += '<button class="btn btn-sm btn-ghost" data-action="editTask" data-id="'+t.id+'">编辑</button><button class="btn btn-danger btn-sm" data-action="delTask" data-id="'+t.id+'">删除</button>';
         html += '</div>';
       });
@@ -693,13 +714,7 @@ PAGES.todo = function(){
   }
   html += '</div></div>';
 
-  /* 搜索筛选（折叠区域） */
-  html += '<div class="todo-filters">'+
-    '<input class="input" id="todoQ" placeholder="搜索事项…" value="'+esc(f.q)+'">'+
-    '<select class="select" id="todoKind"><option value="all"'+(f.kind==='all'?' selected':'')+'>全部类型</option><option value="long"'+(f.kind==='long'?' selected':'')+'>长期</option><option value="week"'+(f.kind==='week'?' selected':'')+'>一周</option><option value="temp"'+(f.kind==='temp'?' selected':'')+'>临时</option></select>'+
-    '<select class="select" id="todoStatus"><option value="all"'+(f.status==='all'?' selected':'')+'>全部</option><option value="undone"'+(f.status==='undone'?' selected':'')+'>未完成</option><option value="done"'+(f.status==='done'?' selected':'')+'>已完成</option></select>'+
-    (b.on ? '<button class="btn btn-danger btn-sm" data-action="batchDel">删除选中 ('+b.sel.size+')</button><button class="btn btn-sm" data-action="batchDone">标记完成</button>' : '')+
-    '</div>';
+  /* （底部搜索筛选栏已删除：批量按钮已迁至顶部 toolbar；用户反馈该区域作用不明确） */
 
   html += '</div>';
   $('#content').innerHTML = html;
@@ -708,9 +723,6 @@ PAGES.todo = function(){
   // 快捷添加：回车触发
   const ti = $('#todoInput');
   if(ti){ ti.addEventListener('keydown', e=>{ if(e.key==='Enter'){ const v=ti.value.trim(); if(v){ ACTIONS.todo.quickAdd(v); ti.value=''; }} }); }
-  $('#todoQ').addEventListener('input', e=>{ filters.todo.q=e.target.value; PAGES.todo(); const i=$('#todoQ'); if(i){ i.focus(); i.setSelectionRange(i.value.length,i.value.length); } });
-  $('#todoStatus').addEventListener('change', e=>{ filters.todo.status=e.target.value; PAGES.todo(); });
-  $('#todoKind').addEventListener('change', e=>{ filters.todo.kind=e.target.value; PAGES.todo(); });
 };
 
 ACTIONS.todo = {
@@ -737,10 +749,17 @@ ACTIONS.todo = {
       {value:'long',text:'长期（永久保留，不会自动消失）'},
       {value:'week',text:'一周（当天~第7天有效，第8天自动取消）'},
       {value:'temp',text:'临时（仅当天，次日消失）'}
-    ]}
+    ]},
+    {key:'repeat',label:'重复周期（⭐必加）',type:'select',value:'none',options:[
+      {value:'none',text:'不重复（仅一次）'},
+      {value:'daily',text:'每天（完成后自动生成明天的）'},
+      {value:'weekly',text:'每周（完成后自动生成下周同一天的）'},
+      {value:'monthly',text:'每月（完成后自动生成下月同一天的）'}
+    ]},
+    {key:'dueTime',label:'截止时间（⭐必加·可选）',type:'time',value:'',placeholder:'不填则不限时'}
   ], d=>{
     if(!d.text){ toast('请输入内容','bad'); return; }
-    State.tasks.push({id:uid(), text:d.text, done:false, doneDate:'', kind:d.kind||'long', createdDate:todayStr()});
+    State.tasks.push({id:uid(), text:d.text, done:false, doneDate:'', kind:d.kind||'long', createdDate:todayStr(), repeat:d.repeat||'none', dueTime:d.dueTime||''});
     save('tasks'); toast('已添加','good'); PAGES.todo();
   }); },
   editTask(id){ const t = State.tasks.find(x=>x.id===id); if(!t) return;
@@ -750,18 +769,49 @@ ACTIONS.todo = {
         {value:'long',text:'长期（永久保留，不会自动消失）'},
         {value:'week',text:'一周（当天~第7天有效，第8天自动取消）'},
         {value:'temp',text:'临时（仅当天，次日消失）'}
-      ]}
+      ]},
+      {key:'repeat',label:'重复周期',type:'select',value:(t.repeat||'none'),options:[
+        {value:'none',text:'不重复（仅一次）'},
+        {value:'daily',text:'每天（完成后自动生成明天的）'},
+        {value:'weekly',text:'每周（完成后自动生成下周同一天的）'},
+        {value:'monthly',text:'每月（完成后自动生成下月同一天的）'}
+      ]},
+      {key:'dueTime',label:'截止时间（可选）',type:'time',value:(t.dueTime||'')}
     ], d=>{
       if(!d.text){ toast('请输入内容','bad'); return; }
-      t.text = d.text; t.kind = d.kind||'long'; save('tasks'); toast('已更新','good'); PAGES.todo();
+      t.text = d.text; t.kind = d.kind||'long'; t.repeat = d.repeat||'none'; t.dueTime = d.dueTime||'';
+      save('tasks'); toast('已更新','good'); PAGES.todo();
     }); },
   delTask(id){ confirmDialog('删除事项', '确定删除该事项吗？此操作不可撤销。', ()=>{
     State.tasks = State.tasks.filter(x=>x.id!==id); save('tasks'); toast('已删除'); PAGES.todo();
   }); },
   toggle(id){ const t = State.tasks.find(x=>x.id===id); if(!t) return;
     if(t.done && t.doneDate===todayStr()){ t.done=false; t.doneDate=''; }
-    else { t.done=true; t.doneDate=todayStr(); recordCheckin(); }
-    save('tasks'); PAGES.todo(); },
+    else {
+      t.done=true; t.doneDate=todayStr(); recordCheckin();
+      const rep = t.repeat || 'none';
+      if(rep !== 'none'){
+        const cur = new Date(todayStr()+'T00:00:00');
+        let next;
+        if(rep === 'daily'){ next = new Date(cur.getTime() + 86400000); }
+        else if(rep === 'weekly'){ next = new Date(cur.getTime() + 7*86400000); }
+        else if(rep === 'monthly'){
+          // 下个月同日（无同日则自动截到下月最后一天：1/31→2/28、3/31→4/30、12/15→次年1/15）
+          const targetMonthIdx = (cur.getMonth() + 1) % 12;
+          const targetYear = cur.getFullYear() + (cur.getMonth()===11 ? 1 : 0);
+          const lastDay = new Date(targetYear, targetMonthIdx + 1, 0).getDate();
+          next = new Date(targetYear, targetMonthIdx, Math.min(cur.getDate(), lastDay));
+        }
+        const nextDs = next.getFullYear()+'-'+pad(next.getMonth()+1)+'-'+pad(next.getDate());
+        const dupExists = State.tasks.some(x => x.text===t.text && (x.repeat||'none')===rep && (x.dueTime||'')===(t.dueTime||'') && x.doneDate===nextDs);
+        if(!dupExists){
+          State.tasks.push({ id:uid(), text:t.text, done:false, doneDate:'', kind:t.kind||'long', createdDate:todayStr(), repeat:rep, dueTime:t.dueTime||'' });
+          toast(rep==='daily'?'🌅 已生成明天任务':(rep==='weekly'?'📅 已生成下周任务':'📆 已生成下月任务'), 'good', 1500);
+        }
+      }
+    }
+    save('tasks'); PAGES.todo();
+  },
   batchToggle(){ toggleBatch('todo'); },
   sel(id){ toggleSel('todo', id); },
   batchDel(){ const b=batch.todo; if(!b||b.sel.size===0){ toast('请先选择','bad'); return; }

@@ -181,6 +181,25 @@ body.dark .topbar{background:rgba(28,32,64,.55);}
 .kind-badge.long{background:rgba(59,130,246,.16); color:#2f6fe0;}
 .kind-badge.week{background:rgba(34,197,94,.20); color:#1a9e4b;}
 .kind-badge.temp{background:rgba(234,179,8,.22); color:#9a7000;}
+body.dark .kind-badge.long{background:rgba(59,130,246,.22); color:#7eb1ff;}
+body.dark .kind-badge.week{background:rgba(34,197,94,.22); color:#5fd58d;}
+body.dark .kind-badge.temp{background:rgba(234,179,8,.28); color:#f0c75c;}
+
+/* 重复周期徽章 / 截止时间徽章（⭐必加项） */
+.meta-badge{display:inline-block; font-size:10.5px; font-weight:600; padding:1px 7px; border-radius:999px; margin-left:6px; vertical-align:middle; line-height:1.5;}
+.meta-badge.rep-daily{background:rgba(108,140,232,.14); color:#6c8ce8;}
+.meta-badge.rep-weekly{background:rgba(34,197,94,.16); color:#1a9e4b;}
+.meta-badge.rep-monthly{background:rgba(168,85,247,.16); color:#9333ea;}
+.meta-badge.due-ok{background:rgba(59,130,246,.10); color:#5a8dee;}
+.meta-badge.due-overdue{background:rgba(239,68,68,.18); color:#dc2626; animation:dueBlink 1.4s ease-in-out infinite;}
+body.dark .meta-badge.rep-daily{background:rgba(108,140,232,.22); color:#9eb6f5;}
+body.dark .meta-badge.rep-weekly{background:rgba(34,197,94,.22); color:#5fd58d;}
+body.dark .meta-badge.rep-monthly{background:rgba(168,85,247,.22); color:#c89bf3;}
+body.dark .meta-badge.due-ok{background:rgba(59,130,232,.18); color:#7eb1ff;}
+body.dark .meta-badge.due-overdue{background:rgba(239,68,68,.28); color:#ff8585;}
+@keyframes dueBlink{0%,100%{opacity:1;}50%{opacity:.55;}}
+.item.overdue{border-left-color:#ef4444 !important; background:linear-gradient(90deg, rgba(239,68,68,.10), var(--card2) 45%) !important;}
+body.dark .item.overdue{background:linear-gradient(90deg, rgba(239,68,68,.18), var(--card2) 45%) !important;}
 .kind-toggle{display:flex; flex:0 0 auto; background:var(--card2); border:1px solid var(--line); border-radius:12px; overflow:hidden;}
 .kt-btn{padding:0 11px; height:42px; font-size:12.5px; font-weight:700; border:none; background:transparent; color:var(--muted); cursor:pointer; transition:.15s;}
 .kt-btn.on[data-kind="long"]{background:#3b82f6; color:#fff;}
