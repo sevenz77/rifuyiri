@@ -1381,6 +1381,54 @@ function reorderCatsInOrder(type, fromKey, toKey){
   saveCatOrder(type, order);
 }
 
+/* 快速记一笔 · 主网格分类拖拽排序（PointerEvent，电脑/手机双端可用；点格仍为记一笔） */
+function bindCatDrag(){
+  const grid = document.querySelector('#content .quick-grid');
+  if(!grid) return;
+  const cells = [...grid.querySelectorAll('.quick[data-cat]')];
+  cells.forEach(cell=>{
+    cell.addEventListener('pointerdown', e=>{
+      if(e.pointerType==='mouse' && e.button!==0) return;
+      const startX = e.clientX, startY = e.clientY;
+      let dragging = false;
+      const begin = ()=>{
+        dragging = true;
+        cell.classList.add('dragging');
+        cell.style.userSelect = 'none';
+        cell.style.pointerEvents = 'none';   // 让 elementFromPoint 命中下方格子
+      };
+      const onMove = (ev)=>{
+        const dx = ev.clientX-startX, dy = ev.clientY-startY;
+        if(!dragging){ if(Math.hypot(dx,dy) < 6) return; begin(); }
+        const under = document.elementFromPoint(ev.clientX, ev.clientY);
+        const target = under && under.closest('.quick[data-cat]');
+        if(target && target!==cell){
+          const r = target.getBoundingClientRect();
+          const before = (ev.clientY < r.top + r.height/2) || (ev.clientY === r.top + r.height/2 && ev.clientX < r.left + r.width/2);
+          if(before) grid.insertBefore(cell, target);
+          else grid.insertBefore(cell, target.nextSibling);
+        }
+      };
+      const onUp = ()=>{
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
+        if(dragging){
+          cell.classList.remove('dragging');
+          cell.style.userSelect=''; cell.style.pointerEvents='';
+          const order = [...grid.querySelectorAll('.quick[data-cat]')].map(x=> x.dataset.cat);
+          saveCatOrder(cell.dataset.type, order);
+          window.__justDragged = true;     // 忽略松手后误触的 click
+          PAGES.accountQuick();            // 重渲染并重新绑定拖拽
+        }
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
+    });
+  });
+}
+
 /* =============================================================================
  * 我的账本 · 一级默认页：快速记一笔（支出/收入切换 + 分类快捷 + 智能输入）
  * =========================================================================== */
@@ -1389,8 +1437,7 @@ PAGES.accountQuick = function(){
   const cats = getCats(type);
   let html = '<div class="page">';
   html += '<div class="card"><div class="card-title">⚡ 快速记一笔'+
-    '<span style="flex:1"></span><button class="btn btn-sm" data-action="smartAdd">➕ 智能输入</button>'+
-    '<button class="btn btn-sm" data-action="openCatManager" title="分类管理：添加/排序/删除">⚙️ 设置</button></div>';
+    '<span style="flex:1"></span><button class="btn btn-sm" data-action="smartAdd">➕ 智能输入</button></div>';
 
   // 支出 / 收入 切换
   html += '<div class="ai-tabs" style="margin-bottom:14px">'+
@@ -1398,17 +1445,20 @@ PAGES.accountQuick = function(){
     '<div class="ai-tab'+(type==='income'?' active':'')+'" data-action="setQuickType" data-t="income">收入</div>'+
     '</div>';
 
-  // 分类网格（4 列）
+  // 分类网格（4 列）· 全部可拖拽排序；末位「其他」管理自定义分类
   html += '<div class="quick-grid qgrid4">';
   cats.forEach(c=>{
     html += '<div class="quick" data-action="quickAdd" data-cat="'+c.key+'" data-type="'+type+'">'+
       '<div class="q-ic">'+c.icon+'</div>'+c.key+'</div>';
   });
+  html += '<div class="quick q-other" data-action="openCatManager" title="管理「其他」自定义分类 / 在此排序所有分类">'+
+    '<div class="q-ic">🗂️</div>其他</div>';
   html += '</div>';
 
-  html += '<div class="mstat-legend">点分类直接记一笔（默认'+ (type==='income'?'收入':'支出') +'）· 也可「智能输入」一次性录多笔</div>';
+  html += '<div class="mstat-legend">点分类直接记一笔（默认'+ (type==='income'?'收入':'支出') +'）· 长按/拖动可排序 · 也可「智能输入」一次性录多笔</div>';
   html += '</div></div>';
   $('#content').innerHTML = html;
+  bindCatDrag();
 };
 
 /* 分类管理弹窗（用户自定义 + 排序）· 不做明显拖拽标识，仅提供功能 */
@@ -1420,12 +1470,12 @@ function openCatManager(){
   const cats  = getCats(viewType);          // 已按 wb_catOrder 排序（内置+自定义合并）
   const order = cats.map(c=>c.key);
 
-  let body = '<h3>⚙️ 分类管理</h3>'+
+  let body = '<h3>🗂️ 其他分类</h3>'+
     '<div class="ai-tabs" style="margin-bottom:14px">'+
       '<div class="ai-tab'+(viewType==='expense'?' active':'')+'" data-cm-type="expense">支出</div>'+
       '<div class="ai-tab'+(viewType==='income'?' active':'')+'" data-cm-type="income">收入</div>'+
     '</div>'+
-    '<div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">按住任意一行上下拖动即可排序（内置 / 自定义均可）；自定义分类还可 <span style="opacity:.85">↑↓</span>、删除或添加新分类</div>'+
+    '<div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">电脑端可直接在「快速记一笔」主网格拖动分类排序；手机端用下方 <span style="opacity:.85">↑↓</span> 调整顺序。所有分类（内置 / 自定义）均可排序，自定义分类还能删除或添加</div>'+
     '<div id="cmList" class="cm-list">'+
       cats.map((c,i)=>{
         const builtin = isBuiltinCat(viewType, c.key);
@@ -1434,10 +1484,9 @@ function openCatManager(){
           '<div class="cm-icon">'+c.icon+'</div>'+
           '<div class="cm-name">'+esc(c.key)+'</div>'+
           '<div class="cm-acts">'+
-            (builtin ? '<span class="cm-tag">内置</span>'
-              : '<button class="cm-btn" data-cm-act="up"   data-ckey="'+esc(c.key)+'" '+(i===0?'disabled':'')+' title="上移">↑</button>'+
-                '<button class="cm-btn" data-cm-act="down" data-ckey="'+esc(c.key)+'" '+(i===order.length-1?'disabled':'')+' title="下移">↓</button>'+
-                '<button class="cm-btn cm-btn-danger" data-cm-act="del" data-ckey="'+esc(c.key)+'" title="删除">✕</button>')+
+            '<button class="cm-btn" data-cm-act="up"   data-ckey="'+esc(c.key)+'" '+(i===0?'disabled':'')+' title="上移">↑</button>'+
+            '<button class="cm-btn" data-cm-act="down" data-ckey="'+esc(c.key)+'" '+(i===order.length-1?'disabled':'')+' title="下移">↓</button>'+
+            (builtin ? '<span class="cm-tag">内置</span>' : '<button class="cm-btn cm-btn-danger" data-cm-act="del" data-ckey="'+esc(c.key)+'" title="删除">✕</button>')+
           '</div>'+
         '</div>';
       }).join('')+
