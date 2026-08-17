@@ -2176,24 +2176,26 @@ PAGES.accountAsset = function(){
   $('#content').innerHTML = html;
 };
 
-/* 资产卡 · 变动历史详情（按时间倒序展示 a.log） */
+/* 资产卡 · 变动历史详情（按时间倒序展示 a.log：adjustAsset 用 unshift 写入最新到 [0]） */
 function renderAcctDetail(a){
-  const log = (a.log || []).slice().reverse();
+  const log = (a.log || []).slice();   // a.log 已经是「最新→最旧」顺序，直接用
   if(log.length===0){
     return '<div class="acct-detail"><div class="acct-detail-head">📒 变动记录</div>'+
-      '<div class="acct-detail-empty">暂无变动记录。<br>点「🔧 调整」增减余额后，变动会自动记录到这里。</div></div>';
+      '<div class="acct-detail-empty">暂无变动记录。点「🔧 调整」增减余额后，变动会自动记录到这里。</div></div>';
   }
   const rows = log.map(r=>{
     const plus = r.d>0;
+    const dateOnly = (r.t||'').split(' ')[0] || '—';   // YYYY-MM-DD
+    const balAfter = (r.b===undefined || r.b===null || isNaN(r.b)) ? '—' : fmt(r.b);
     return '<div class="acct-log-row">'+
       '<div class="acct-log-dot '+(plus?'plus':'minus')+'">'+(plus?'＋':'－')+'</div>'+
       '<div class="acct-log-body">'+
         '<div class="acct-log-line1">'+
           '<span class="acct-log-amt '+(plus?'plus':'minus')+'">'+(plus?'+':'−')+fmt(Math.abs(r.d))+'</span>'+
-          '<span class="acct-log-time">'+esc(r.t||'—')+'</span>'+
+          '<span class="acct-log-time">'+esc(dateOnly)+'</span>'+
         '</div>'+
-        (r.note ? '<div class="acct-log-note">'+esc(r.note)+'</div>' : '')+
-        '<div class="acct-log-after">变动后余额：<b>'+fmt(r.b)+'</b></div>'+
+        (r.note?'<div class="acct-log-note">'+esc(r.note)+'</div>':'')+
+        '<div class="acct-log-after">变动后余额：<b>'+balAfter+'</b></div>'+
       '</div>'+
     '</div>';
   }).join('');
@@ -2389,7 +2391,7 @@ const ACCOUNT_ACTIONS = {
       a.balance = round2(a.balance + sign*amt);
       a.updated = nowStr();
       a.log = a.log || [];
-      a.log.unshift({ t: nowStr(), d: sign*amt, note:(d.note||'').trim() });
+      a.log.unshift({ t: nowStr(), d: sign*amt, b: a.balance, note:(d.note||'').trim() });
       if(a.log.length>50) a.log.length = 50;
       save('assets');
       toast((sign>0?'已增加 ':'已减少 ')+fmt(amt)+(isLiab?'（负债变动）':''), 'good');
