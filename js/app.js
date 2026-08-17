@@ -2176,17 +2176,22 @@ PAGES.accountAsset = function(){
   $('#content').innerHTML = html;
 };
 
-/* 资产卡 · 变动历史详情（按时间倒序展示 a.log：adjustAsset 用 unshift 写入最新到 [0]） */
+/* 资产卡 · 变动历史详情（按时间倒序展示 a.log：adjustAsset 用 unshift 写入最新到 [0]）
+ * 余额展示：不依赖历史 b 字段（早期数据无 b），改为从卡片当前余额往回推算——
+ *   log[0]=最新，其变动后余额 = 卡片当前余额；向前逐条减去 d 即得上一条变动后的余额。
+ *   这样无论新旧数据都能正确显示「变动后余额」。 */
 function renderAcctDetail(a){
   const log = (a.log || []).slice();   // a.log 已经是「最新→最旧」顺序，直接用
   if(log.length===0){
     return '<div class="acct-detail"><div class="acct-detail-head">📒 变动记录</div>'+
       '<div class="acct-detail-empty">暂无变动记录。点「🔧 调整」增减余额后，变动会自动记录到这里。</div></div>';
   }
+  let running = round2(a.balance || 0);   // 从当前余额往前推
   const rows = log.map(r=>{
     const plus = r.d>0;
     const dateOnly = (r.t||'').split(' ')[0] || '—';   // YYYY-MM-DD
-    const balAfter = (r.b===undefined || r.b===null || isNaN(r.b)) ? '—' : fmt(r.b);
+    const balAfter = fmt(running);                     // 本条变动后的余额
+    running = round2(running - (r.d||0));              // 前推到上一条之前
     return '<div class="acct-log-row">'+
       '<div class="acct-log-dot '+(plus?'plus':'minus')+'">'+(plus?'＋':'－')+'</div>'+
       '<div class="acct-log-body">'+
