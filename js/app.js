@@ -1451,17 +1451,23 @@ PAGES.accountQuick = function(){
     '<div class="ai-tab'+(type==='income'?' active':'')+'" data-action="setQuickType" data-t="income">收入</div>'+
     '</div>';
 
-  // 分类网格（4 列）· 移位模式开启时可拖；末位「其他」管理自定义分类
+  // 分类网格（4 列）· 移位模式开启时可拖；「设置」格承载分类管理（替代原「其他」入口）
   html += '<div class="quick-grid qgrid4'+(catMoveOn?' qg-move':'')+'">';
+  const hasMgr = cats.some(c=>c.key==='设置');
   cats.forEach(c=>{
-    html += '<div class="quick'+(catMoveOn?' qmove':'')+'" data-action="quickAdd" data-cat="'+c.key+'" data-type="'+type+'"'+
+    const isMgr = c.key==='设置';
+    const act = isMgr ? 'openCatManager' : 'quickAdd';
+    html += '<div class="quick'+(catMoveOn?' qmove':'')+'" data-action="'+act+'"'+(isMgr?'':' data-cat="'+c.key+'" data-type="'+type+'"')+
       (catMoveOn?' title="按住可拖动排序"':'')+'>'+
       '<div class="q-ic">'+c.icon+'</div>'+c.key+
       (catMoveOn?'<div class="q-grip">⋮⋮</div>':'')+
     '</div>';
   });
-  html += '<div class="quick q-other" data-action="openCatManager" title="管理「其他」自定义分类 / 在此排序所有分类">'+
-    '<div class="q-ic">🗂️</div>其他</div>';
+  // 收入等无内置「设置」分类的类型，追加一个「设置」管理入口（复用虚线管理格样式）
+  if(!hasMgr){
+    html += '<div class="quick q-other" data-action="openCatManager" title="管理分类 / 在此排序所有分类">'+
+      '<div class="q-ic">⚙️</div>设置</div>';
+  }
   html += '</div>';
 
   html += '<div class="mstat-legend">'+
@@ -1485,7 +1491,7 @@ function openCatManager(){
   const cats  = getCats(viewType);          // 已按 wb_catOrder 排序（内置+自定义合并）
   const order = cats.map(c=>c.key);
 
-  let body = '<h3>🗂️ 其他分类</h3>'+
+  let body = '<h3>⚙️ 设置 · 分类管理</h3>'+
     '<div class="ai-tabs" style="margin-bottom:14px">'+
       '<div class="ai-tab'+(viewType==='expense'?' active':'')+'" data-cm-type="expense">支出</div>'+
       '<div class="ai-tab'+(viewType==='income'?' active':'')+'" data-cm-type="income">收入</div>'+
