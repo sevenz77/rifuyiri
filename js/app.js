@@ -1381,10 +1381,12 @@ function reorderCatsInOrder(type, fromKey, toKey){
   saveCatOrder(type, order);
 }
 
-/* 快速记一笔 · 主网格分类拖拽排序（PointerEvent，电脑/手机双端可用；点格仍为记一笔） */
+/* 快速记一笔 · 主网格分类拖拽排序（PointerEvent，电脑/手机双端可用；点格仍为记一笔）
+ * 仅在【移位】开启时绑定 PointerEvent；默认所有分类格不可拖、仅响应点击 */
 function bindCatDrag(){
   const grid = document.querySelector('#content .quick-grid');
   if(!grid) return;
+  if(!catMoveOn) return;                          // 移位未开启：不绑定拖拽
   const cells = [...grid.querySelectorAll('.quick[data-cat]')];
   cells.forEach(cell=>{
     cell.addEventListener('pointerdown', e=>{
@@ -1437,7 +1439,11 @@ PAGES.accountQuick = function(){
   const cats = getCats(type);
   let html = '<div class="page">';
   html += '<div class="card"><div class="card-title">⚡ 快速记一笔'+
-    '<span style="flex:1"></span><button class="btn btn-sm" data-action="smartAdd">➕ 智能输入</button></div>';
+    '<span style="flex:1"></span>'+
+    '<button class="btn btn-sm '+(catMoveOn?'btn-primary':'btn-soft')+'" data-action="toggleMoveMode" title="'+(catMoveOn?'点击关闭移位（分类格将不可拖动）':'点击开启移位，分类格将可拖动排序')+'">'+
+      (catMoveOn?'🔒 移位中':'🔓 移位')+
+    '</button>'+
+    '<button class="btn btn-sm" data-action="smartAdd">➕ 智能输入</button></div>';
 
   // 支出 / 收入 切换
   html += '<div class="ai-tabs" style="margin-bottom:14px">'+
@@ -1445,17 +1451,24 @@ PAGES.accountQuick = function(){
     '<div class="ai-tab'+(type==='income'?' active':'')+'" data-action="setQuickType" data-t="income">收入</div>'+
     '</div>';
 
-  // 分类网格（4 列）· 全部可拖拽排序；末位「其他」管理自定义分类
-  html += '<div class="quick-grid qgrid4">';
+  // 分类网格（4 列）· 移位模式开启时可拖；末位「其他」管理自定义分类
+  html += '<div class="quick-grid qgrid4'+(catMoveOn?' qg-move':'')+'">';
   cats.forEach(c=>{
-    html += '<div class="quick" data-action="quickAdd" data-cat="'+c.key+'" data-type="'+type+'">'+
-      '<div class="q-ic">'+c.icon+'</div>'+c.key+'</div>';
+    html += '<div class="quick'+(catMoveOn?' qmove':'')+'" data-action="quickAdd" data-cat="'+c.key+'" data-type="'+type+'"'+
+      (catMoveOn?' title="按住可拖动排序"':'')+'>'+
+      '<div class="q-ic">'+c.icon+'</div>'+c.key+
+      (catMoveOn?'<div class="q-grip">⋮⋮</div>':'')+
+    '</div>';
   });
   html += '<div class="quick q-other" data-action="openCatManager" title="管理「其他」自定义分类 / 在此排序所有分类">'+
     '<div class="q-ic">🗂️</div>其他</div>';
   html += '</div>';
 
-  html += '<div class="mstat-legend">点分类直接记一笔（默认'+ (type==='income'?'收入':'支出') +'）· 长按/拖动可排序 · 也可「智能输入」一次性录多笔</div>';
+  html += '<div class="mstat-legend">'+
+    (catMoveOn
+      ? '移位中：长按分类可上下拖动排序，再点「🔒 移位中」关闭'
+      : '点分类直接记一笔（默认'+ (type==='income'?'收入':'支出') +'） · 也可「智能输入」一次性录多笔 · 需排序时点右上「🔓 移位」')+
+  '</div>';
   html += '</div></div>';
   $('#content').innerHTML = html;
   bindCatDrag();
@@ -1464,6 +1477,8 @@ PAGES.accountQuick = function(){
 /* 分类管理弹窗（用户自定义 + 排序）· 不做明显拖拽标识，仅提供功能 */
 const CAT_ICONS = ['🍴','🍜','🍱','🍣','🍰','🍻','🎮','🎵','🎬','�','🛍️','🎁','🧧','💄','💊','�','✏️','🎓','🏠','🚗','🚌','✈️','🚲','📱','💻','🖥️','🐶','🐱','🌳','⚽','🏃','💼','💰','📈','💳','🏦','📦','⚙️','🔧','🧹'];
 let catManagerType = 'expense';  // 分类管理弹窗持久类型（避免重开闭包丢失）
+let catMoveOn     = false;       // 【快速记一笔】移位模式：开启后分类格可拖（默认关闭，避免误碰）
+let acctDetailId  = null;        // 【资产管家】当前展开详情的卡 id
 function openCatManager(){
   catManagerType = catManagerType || acctQuickType;
   const viewType = catManagerType;
@@ -2133,14 +2148,17 @@ PAGES.accountAsset = function(){
       const isLiab = a.kind==='liability';
       const defTag = a.isDefaultPay?' <span class="acct-tag-pay">已设默认支出</span>'
                   : a.isDefaultIncome?' <span class="acct-tag-inc">已设默认收入</span>' : '';
-      html += '<div class="acct-card'+(isLiab?' acct-liab':'')+'">'+
+      const logCount = (a.log || []).length;
+      html += '<div class="acct-card'+(isLiab?' acct-liab':'')+(acctDetailId===a.id?' acct-open':'')+'" data-action="toggleAssetDetail" data-id="'+a.id+'" title="'+(logCount>0?'点卡片查看 '+logCount+' 条变动记录':'点卡片查看变动记录')+'">'+
         '<div class="acct-ic">'+(a.icon||(isLiab?'🧾':'💳'))+'</div>'+
         '<div class="acct-body">'+
-          '<div class="acct-name">'+esc(a.name)+(isLiab?' <span class="badge liab">负债</span>':'')+defTag+'</div>'+
+          '<div class="acct-name">'+esc(a.name)+(isLiab?' <span class="badge liab">负债</span>':'')+defTag+(logCount>0?' <span class="acct-tag-log">📒 '+logCount+'条</span>':'')+'</div>'+
           '<div class="acct-sub">'+esc(a.bank||'—')+' · 更新于 '+(a.updated||'—')+
             ((a.log && a.log[0]) ? ' · 上次'+(a.log[0].d>0?'+':'')+fmt(a.log[0].d) : '')+'</div>'+
         '</div>'+
-        '<div class="acct-bal" style="color:'+(isLiab?'var(--bad)':'var(--primary)')+'">'+fmt(a.balance)+'</div>'+
+        '<div class="acct-bal" style="color:'+(isLiab?'var(--bad)':'var(--primary)')+'">'+fmt(a.balance)+
+          '<div class="acct-arrow">'+(acctDetailId===a.id?'▲':'▼')+'</div>'+
+        '</div>'+
         '<div class="acct-acts">'+
           '<button class="btn btn-sm'+(a.isDefaultPay?' btn-primary':' btn-soft')+'" data-action="setPay" data-id="'+a.id+'" title="'+(a.isDefaultPay?'取消默认支出卡':'设为默认支出卡')+'">💳 支</button>'+
           '<button class="btn btn-sm'+(a.isDefaultIncome?' btn-primary':' btn-soft')+'" data-action="setInc" data-id="'+a.id+'" title="'+(a.isDefaultIncome?'取消默认收入卡':'设为默认收入卡')+'">💰 收</button>'+
@@ -2148,6 +2166,7 @@ PAGES.accountAsset = function(){
           '<button class="btn btn-sm" data-action="editAsset" data-id="'+a.id+'">编辑</button>'+
           '<button class="btn btn-danger btn-sm" data-action="delAsset" data-id="'+a.id+'">删除</button>'+
         '</div>'+
+        (acctDetailId===a.id ? renderAcctDetail(a) : '')+
       '</div>';
     });
     html += '</div>';
@@ -2156,6 +2175,30 @@ PAGES.accountAsset = function(){
   html += '</div></div>';
   $('#content').innerHTML = html;
 };
+
+/* 资产卡 · 变动历史详情（按时间倒序展示 a.log） */
+function renderAcctDetail(a){
+  const log = (a.log || []).slice().reverse();
+  if(log.length===0){
+    return '<div class="acct-detail"><div class="acct-detail-head">📒 变动记录</div>'+
+      '<div class="acct-detail-empty">暂无变动记录。<br>点「🔧 调整」增减余额后，变动会自动记录到这里。</div></div>';
+  }
+  const rows = log.map(r=>{
+    const plus = r.d>0;
+    return '<div class="acct-log-row">'+
+      '<div class="acct-log-dot '+(plus?'plus':'minus')+'">'+(plus?'＋':'－')+'</div>'+
+      '<div class="acct-log-body">'+
+        '<div class="acct-log-line1">'+
+          '<span class="acct-log-amt '+(plus?'plus':'minus')+'">'+(plus?'+':'−')+fmt(Math.abs(r.d))+'</span>'+
+          '<span class="acct-log-time">'+esc(r.t||'—')+'</span>'+
+        '</div>'+
+        (r.note ? '<div class="acct-log-note">'+esc(r.note)+'</div>' : '')+
+        '<div class="acct-log-after">变动后余额：<b>'+fmt(r.b)+'</b></div>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+  return '<div class="acct-detail"><div class="acct-detail-head">📒 变动记录（'+log.length+' 条，按时间倒序）</div>'+rows+'</div>';
+}
 
 function txForm(title, prefill, onOk){
   const dPay = findDefault('pay'), dInc = findDefault('income');
@@ -2227,6 +2270,7 @@ const ACCOUNT_ACTIONS = {
   },
   /* ---- 快速记一笔 ---- */
   setQuickType(id, el){ acctQuickType = el.dataset.t || 'expense'; PAGES.accountQuick(); },
+  toggleMoveMode(){ catMoveOn = !catMoveOn; PAGES.accountQuick(); },
   openCatManager(){ openCatManager(); },
   /* ---- 年月概况 · 顶部 · 账单（月/年 + 12月明细 + 年度补录） ---- */
   setBillView(id, el){ acctBillView = el.dataset.v || 'month'; PAGES.accountYearly(); },
@@ -2319,10 +2363,17 @@ const ACCOUNT_ACTIONS = {
   delAsset(id){ const a = State.assets.find(x=>x.id===id); if(!a) return;
     const bound = State.accounts.filter(t=> t.accountId===id).length;
     const extra = (a.isDefaultPay||a.isDefaultIncome) ? '该卡是默认卡，删除后将自动解绑。' : '';
+    if(acctDetailId===id) acctDetailId = null;
     confirmDialog('删除卡片', '确定删除「'+a.name+'」吗？'+extra+(bound>0?('已有 '+bound+' 笔账目绑定此卡，账目会保留但不再联动余额。'):''), ()=>{
       State.assets = State.assets.filter(x=>x.id!==id);
       save('assets'); toast('已删除'); refreshAcct();
     }); },
+  /* 点卡片主体展开/收起 变动历史详情（同额度任务的展开模式） */
+  toggleAssetDetail(id){
+    const a = State.assets.find(x=>x.id===id); if(!a) return;
+    acctDetailId = (acctDetailId===id) ? null : id;
+    PAGES.accountAsset();
+  },
   /* 单卡余额调整（增 / 减，每次变动写入时间 + 变动记录） */
   adjustAsset(id){
     const a = State.assets.find(x=>x.id===id); if(!a) return;
