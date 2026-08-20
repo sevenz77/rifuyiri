@@ -157,13 +157,32 @@ const NAV = [
   { key:'ai',       label:'AI+',      icon:'ai', children:[
     {key:'aiNetwork', label:'工具网络'},
     {key:'apiKeys',   label:'API KEYS'},
-    {key:'clients',   label:'第三方客户端'},
-    {key:'prompts',   label:'提示词库'} ]}
+    {key:'prompts',   label:'提示词库'},
+    {key:'clients',   label:'第三方客户端'} ]}
 ];
 
 let currentPage = 'todo';
 const filters = {};   // 各页面筛选状态
 const batch   = {};   // 各页面批量选择状态 {on, sel:Set}
+
+/* ---- 侧边栏一级菜单展开/收缩状态（按父项 key 持久化到 localStorage） ---- */
+let navOpen = new Set();
+try {
+  const saved = JSON.parse(localStorage.getItem('wb_navOpen') || '[]');
+  if(Array.isArray(saved)) navOpen = new Set(saved.filter(k => typeof k === 'string'));
+} catch(e) { navOpen = new Set(); }
+function persistNavOpen(){
+  try { localStorage.setItem('wb_navOpen', JSON.stringify([...navOpen])); }
+  catch(e) {}
+}
+function setNavOpen(key, open){
+  if(open) navOpen.add(key); else navOpen.delete(key);
+  persistNavOpen();
+  const parentEl = document.querySelector(`#nav .nav-parent[data-parent="${key}"]`);
+  if(parentEl) parentEl.classList.toggle('open', open);
+  const subEl    = document.querySelector(`#nav .subnav[data-subnav="${key}"]`);
+  if(subEl)    subEl.classList.toggle('show', open);
+}
 
 /* ---- 我的账本 · 各页视图状态（懒初始化，避免加载顺序问题） ---- */
 let acctMonthCursor = '';         // 本月账单游标 'YYYY-MM'（空 = 用当月）
@@ -304,15 +323,26 @@ function init(){
 function renderNav(){
   let html = '';
   NAV.forEach(n=>{
-    html += `<div class="nav-item" data-page="${n.key}">${icon(n.icon)}<span>${n.label}</span></div>`;
-    if(n.children) html += '<div class="subnav">'+ n.children.map(c=>
-      `<div class="subnav-item" data-page="${c.key}">${esc(c.label)}</div>`).join('') +'</div>';
+    if(n.children){
+      const isOpen = navOpen.has(n.key);
+      html += `<div class="nav-item nav-parent${isOpen?' open':''}" data-parent="${n.key}">${icon(n.icon)}<span>${n.label}</span></div>`;
+      html += `<div class="subnav${isOpen?' show':''}" data-subnav="${n.key}">`+ n.children.map(c=>
+        `<div class="subnav-item" data-page="${c.key}">${esc(c.label)}</div>`).join('') +'</div>';
+    } else {
+      html += `<div class="nav-item" data-page="${n.key}">${icon(n.icon)}<span>${n.label}</span></div>`;
+    }
   });
   $('#nav').innerHTML = html;
-  $$('#nav .nav-item').forEach(el=>{
+  // 父项 click → 切换展开/收缩
+  $$('#nav .nav-parent').forEach(el=>{
+    el.addEventListener('click', (e)=> { e.stopPropagation(); setNavOpen(el.dataset.parent, !navOpen.has(el.dataset.parent)); });
+  });
+  // 子项 click → 进入页面
+  $$('#nav .subnav-item').forEach(el=>{
     el.addEventListener('click', (e)=> { e.stopPropagation(); goto(el.dataset.page); });
   });
-  $$('#nav .subnav-item').forEach(el=>{
+  // 无 children 的一级项 click → 进入页面
+  $$('#nav .nav-item:not(.nav-parent)').forEach(el=>{
     el.addEventListener('click', (e)=> { e.stopPropagation(); goto(el.dataset.page); });
   });
 }
@@ -325,33 +355,31 @@ function navLabel(key){
   return '';
 }
 function goto(key){
-  // 父项【我的账本】有 children，但默认渲染【快速记一笔】而非首个子项【本月账单】
+  // 一级菜单（带 children 的父项）：仅切换展开/收缩，不进入子页
   const navItem = NAV.find(n=>n.key===key);
   if(navItem && navItem.children){
-    if(key==='account'){
-      currentPage = 'accountQuick';
-      $$('#nav .nav-item').forEach(el=>{
-        el.classList.toggle('active', el.dataset.page==='account');
-        el.classList.toggle('open', el.dataset.page==='account');
-      });
-      $$('#nav .subnav-item').forEach(el=> el.classList.remove('active'));
-      $('#pageTitle').textContent = '我的账本';
-      $('#sidebar').classList.remove('open');
-      if(!$('#modalRoot').classList.contains('show')) $('#overlay').classList.remove('show');
-      openPage('accountQuick');
-      return;
-    }
-    key = navItem.children[0].key;
+    setNavOpen(key, !navOpen.has(key));
+    return;
   }
   currentPage = key;
   const parentKey = (NAV.find(n=>n.children && n.children.some(c=>c.key===key))||{}).key;
+  if(parentKey){
+    if(!navOpen.has(parentKey)){
+      navOpen.add(parentKey);
+      persistNavOpen();
+    }
+    const parentEl = document.querySelector(`#nav .nav-parent[data-parent="${parentKey}"]`);
+    if(parentEl) parentEl.classList.add('open');
+    const subEl = document.querySelector(`#nav .subnav[data-subnav="${parentKey}"]`);
+    if(subEl) subEl.classList.add('show');
+  }
   $$('#nav .nav-item').forEach(el=>{
-    el.classList.toggle('active', el.dataset.page===key || el.dataset.page===parentKey);
-    el.classList.toggle('open', el.dataset.page===parentKey);
+    const isActive = el.dataset.page===key || (el.dataset.parent && el.dataset.parent===parentKey);
+    el.classList.toggle('active', !!isActive);
   });
   $$('#nav .subnav-item').forEach(el=> el.classList.toggle('active', el.dataset.page===key));
   $('#pageTitle').textContent = navLabel(key) || (NAV.find(n=>n.key===key)||{}).label || '';
-  $('.sidebar') && $('#sidebar').classList.remove('open');
+  if($('#sidebar')) $('#sidebar').classList.remove('open');
   if(!$('#modalRoot').classList.contains('show')) $('#overlay').classList.remove('show');
   openPage(key);
 }
@@ -2875,19 +2903,18 @@ function promptCard(p, i){
   '</div>';
 }
 function externalCard(e){
-  const tagClass = e.tag==='Github' ? 'tag-github' : (e.tag==='国内社区' ? 'tag-cn' : 'tag-foreign');
   return '<div class="card prompt-card external-card">'+
     '<div class="prompt-head">'+esc(e.name)+'</div>'+
     '<div class="prompt-desc">'+esc(e.intro)+'</div>'+
-    '<div class="prompt-tags"><span class="prompt-tag '+tagClass+'">'+esc(e.tag)+'</span></div>'+
     '<div class="prompt-acts">'+
       '<a class="btn btn-primary btn-sm" href="'+esc(e.url)+'" target="_blank" rel="noopener">打开链接</a>'+
     '</div>'+
   '</div>';
 }
 PAGES.prompts = function(){
-  if(!filters.prompts) filters.prompts = { tab:'private' };
+  if(!filters.prompts) filters.prompts = { tab:'private', tag:'all' };
   const ft = filters.prompts.tab;
+  const curTag = filters.prompts.tag || 'all';
 
   // 首次打开时，把内置示例写入本地（用户可编辑/删除）
   if(!State.prompts.length && CONFIG.privatePrompts && CONFIG.privatePrompts.length){
@@ -2907,6 +2934,11 @@ PAGES.prompts = function(){
   });
   if(migrated) save('prompts');
 
+  // 收集所有 tag（去重，过滤空）
+  const allTags = new Set();
+  State.prompts.forEach(p => (Array.isArray(p.tags) ? p.tags : []).forEach(t => t && allTags.add(t)));
+  const tagList = ['all', ...Array.from(allTags)];
+
   let html = '<div class="page">';
   html += '<div class="ai-header"><h2>提示词库</h2><span class="ai-updated">数据更新：'+esc(CONFIG.promptsUpdated)+'</span></div>';
   html += '<div class="ai-sub">私有指令本地保存 · 外部导航只做网址聚合</div>';
@@ -2921,14 +2953,21 @@ PAGES.prompts = function(){
   const showExternal = ft==='all' || ft==='external';
 
   if(showPrivate){
+    // 分类标签筛选
+    if(State.prompts.length > 0){
+      html += '<div class="prompt-filter">'+
+        tagList.map(t => '<button class="prompt-filter-btn'+(curTag===t?' active':'')+'" data-action="promptTag" data-tag="'+esc(t)+'">'+esc(t==='all'?'全部':t)+'</button>').join('')+
+        '</div>';
+    }
     if(ft==='private'){
       html += '<div class="toolbar" style="margin:0 0 12px"><button class="btn btn-primary btn-sm" data-action="addPrompt">＋ 新增私有指令</button></div>';
     }
-    if(State.prompts.length===0){
-      html += '<div class="empty" style="padding:16px;color:var(--muted)">暂无私有指令，点击右上角「＋ 新增」或从 config.js 初始化。</div>';
+    const list = curTag==='all' ? State.prompts : State.prompts.filter(p => Array.isArray(p.tags) && p.tags.includes(curTag));
+    if(list.length===0){
+      html += '<div class="empty" style="padding:16px;color:var(--muted)">'+(State.prompts.length===0?'暂无私有指令，点击右上角「＋ 新增」或从 config.js 初始化。':'当前分类下暂无指令。')+'</div>';
     } else {
       html += '<div class="prompt-grid">';
-      State.prompts.forEach(p => html += promptCard(p));
+      list.forEach(p => html += promptCard(p));
       html += '</div>';
     }
   }
@@ -2949,7 +2988,8 @@ PAGES.prompts = function(){
   $('#content').innerHTML = html;
 };
 ACTIONS.prompts = {
-  promptTab(_, el){ filters.prompts.tab = el.dataset.tab; PAGES.prompts(); },
+  promptTab(_, el){ filters.prompts.tab = el.dataset.tab; filters.prompts.tag = 'all'; PAGES.prompts(); },
+  promptTag(_, el){ filters.prompts.tag = el.dataset.tag; PAGES.prompts(); },
   copyPrompt(_, el){
     const id = el.dataset.id;
     const p = State.prompts.find(x=>x.id===id);

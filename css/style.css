@@ -77,8 +77,9 @@ body.dark .sidebar{background:rgba(28,32,64,.72);}
 .nav-item .mi{width:30px;height:30px;flex:0 0 30px; font-size:15px;}
 
 /* 二级菜单（我的账本 → 本月账单/年月概况/资产管家） */
-.subnav{display:flex; flex-direction:column; gap:3px; margin:2px 0 4px 20px; padding-left:10px;
+.subnav{display:none; flex-direction:column; gap:3px; margin:2px 0 4px 20px; padding-left:10px;
   border-left:2px solid var(--line);}
+.subnav.show{display:flex;}
 .subnav-item{
   padding:8px 12px; border-radius:11px; cursor:pointer; color:var(--muted);
   font-weight:600; font-size:13.5px; transition:.16s; border:1px solid transparent;
@@ -604,6 +605,21 @@ body.dark .prompt-tag.tag-foreign{color:#bfa8ff; background:#2a1f4a; border-colo
 .prompt-acts{display:flex; gap:8px; margin-top:4px;}
 .prompt-acts .btn{flex:1; text-align:center; justify-content:center;}
 .external-card .prompt-desc{min-height:0;}
+.external-card{display:flex; flex-direction:column;}
+.external-card .prompt-acts{margin-top:auto; padding-top:8px;}
+/* 私有指令 · 分类标签筛选 */
+.prompt-filter{display:flex; flex-wrap:wrap; gap:6px; margin:0 0 14px;}
+.prompt-filter-btn{
+  font-size:12px; font-weight:700; padding:5px 12px; border-radius:999px;
+  color:var(--muted); background:var(--card2); border:1px solid var(--line); cursor:pointer;
+  transition:.14s; user-select:none;
+}
+.prompt-filter-btn:hover{border-color:var(--primary); color:var(--primary);}
+.prompt-filter-btn.active{
+  background:linear-gradient(135deg,var(--primary),var(--primary2));
+  color:#fff; border-color:transparent;
+}
+body.dark .prompt-filter-btn{background:rgba(255,255,255,.05);}
 
 /* ----------------------------- 响应式（手机端抽屉） ----------------------------- */
 @media (max-width:760px){

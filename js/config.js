@@ -211,10 +211,11 @@ const CONFIG = {
    * AI+ · 提示词库
    * 字段：
    *   privatePrompts: [{ id, title, desc, tags:[], content }]
-   *   externalPrompts: [{ name, intro, tag:'Github'|'国内社区'|'海外', url }]
+   *   externalPrompts: [{ name, intro, url }]
    * 维护：说「更新【AI+模块】」时，由 AI 读取 AI+模块专用/ 下对应 .md 重建本段，并改 promptsUpdated。
+   *   私有指令的 tags 用于页内分类筛选（用户自设、可在新增/编辑时填入）。
    * ========================================================================= */
-  promptsUpdated: '2026-08-21 02:27',
+  promptsUpdated: '2026-08-21 02:53',
   privatePrompts: [
     { id:'prompt-1', title:'新媒体标题党生成器', desc:'输入主题，输出 5 个高点击率标题', tags:['通用对话模型','新媒体','标题党'], content:'你是一位资深新媒体编辑。请围绕用户给定的主题，输出 5 个不同风格的标题（悬念型、数字型、对比型、痛点型、共鸣型），并简要说明每个标题的吸睛点。主题：{{主题}}' },
     { id:'prompt-2', title:'小说场景扩写', desc:'把一句话梗概扩展成 300 字细腻场景', tags:['Claude','GPT-4','写作'], content:'你擅长细腻的场景描写。请将下面的一句话梗概扩写成一段约 300 字的场景描写，保留省略号与留白，避免 AI 味句式。梗概：{{梗概}}' },
@@ -222,15 +223,18 @@ const CONFIG = {
     { id:'prompt-4', title:'AI 工具选型对比', desc:'输入需求，给出三款工具横向对比', tags:['通用对话模型','决策','工具'], content:'用户有一个具体需求，请推荐 3 款最合适的工具/方案，用表格对比价格、优缺点、适用场景，并给出最终推荐。需求：{{需求}}' }
   ],
   externalPrompts: [
-    { name:'AiShort', intro:'中文 AI 快捷指令表，分类清晰、一键复制', tag:'国内社区', url:'https://www.aishort.top/' },
-    { name:'LangGPT', intro:'结构化提示词方法论与模板社区', tag:'Github', url:'https://github.com/EmbraceAGI/LangGPT' },
-    { name:'PromptBase', intro:'提示词交易市场，覆盖写作、图像、编程', tag:'海外', url:'https://promptbase.com' },
-    { name:'FlowGPT', intro:'海外最大提示词分享与聊天社区', tag:'海外', url:'https://flowgpt.com' },
-    { name:'PromptHero', intro:'全球最大提示词库之一，覆盖文生图、ChatGPT 等', tag:'海外', url:'https://prompthero.com' },
-    { name:'SnackPrompt', intro:'团队协作型提示词库，可按角色/场景筛选', tag:'海外', url:'https://snackprompt.com' },
-    { name:'AIPRM', intro:'浏览器插件，直接在 ChatGPT 页面调用数千 Prompt', tag:'海外', url:'https://www.aiprm.com' },
-    { name:'发现 AI 指令', intro:'高阶 AI 指令词合集，覆盖内容创作、电商、学术等', tag:'国内社区', url:'https://www.faxianai.com/prompt/deepseek' },
-    { name:'Awesome ChatGPT Prompts', intro:'英文经典提示词仓库，持续更新', tag:'Github', url:'https://github.com/f/awesome-chatgpt-prompts' }
+    { name:'AiShort', intro:'中文 AI 快捷指令表，分类清晰、一键复制', url:'https://www.aishort.top/' },
+    { name:'Prompt123', intro:'国内免费 AI 提示词平台，覆盖写作/办公/编程/绘画', url:'https://www.prompt123.cn/' },
+    { name:'WayToAGI 提示词库', intro:'专业精选 Prompt，覆盖文案、脚本、运营全场景', url:'https://www.waytoagi.com/zh/prompts' },
+    { name:'PromptHub', intro:'中文 AI 提示词社区，5000+ 模板，浏览器插件可用', url:'https://prompthub.xin/' },
+    { name:'PromptUp', intro:'提示词发现、存储与分享平台，多语言支持', url:'https://promptup.net/' },
+    { name:'发现 AI 指令', intro:'高阶 AI 指令词合集，覆盖内容创作、电商、学术等', url:'https://www.faxianai.com/prompt/deepseek' },
+    { name:'AI 指令合集', intro:'工具网站指令合集，覆盖写作、面试、程序开发等', url:'https://www.luyinzhushou.com/aizhiling/' },
+    { name:'PromptHero', intro:'全球最大提示词库之一，覆盖文生图、ChatGPT 等', url:'https://prompthero.com' },
+    { name:'FlowGPT', intro:'海外最大提示词分享与聊天社区', url:'https://flowgpt.com' },
+    { name:'PromptBase', intro:'提示词交易市场，覆盖写作、图像、编程', url:'https://promptbase.com' },
+    { name:'SnackPrompt', intro:'团队协作型提示词库，可按角色/场景筛选', url:'https://snackprompt.com' },
+    { name:'AIPRM', intro:'浏览器插件，直接在 ChatGPT 页面调用数千 Prompt', url:'https://www.aiprm.com' }
   ],
 
   thirdPartyClients: {
