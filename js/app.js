@@ -325,17 +325,25 @@ function renderNav(){
   NAV.forEach(n=>{
     if(n.children){
       const isOpen = navOpen.has(n.key);
-      html += `<div class="nav-item nav-parent${isOpen?' open':''}" data-parent="${n.key}">${icon(n.icon)}<span>${n.label}</span></div>`;
+      // 父项结构：左侧 [icon + label]（点 = 跳默认子页）；右侧 chevron（点 = toggle 展开/收缩，不跳页）
+      html += `<div class="nav-item nav-parent${isOpen?' open':''}" data-parent="${n.key}">` +
+        `<span class="nav-main">${icon(n.icon)}<span class="nav-label">${n.label}</span></span>` +
+        `<span class="nav-chevron" data-chev="${n.key}" title="展开/收缩"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>` +
+        `</div>`;
       html += `<div class="subnav${isOpen?' show':''}" data-subnav="${n.key}">`+ n.children.map(c=>
         `<div class="subnav-item" data-page="${c.key}">${esc(c.label)}</div>`).join('') +'</div>';
     } else {
-      html += `<div class="nav-item" data-page="${n.key}">${icon(n.icon)}<span>${n.label}</span></div>`;
+      html += `<div class="nav-item" data-page="${n.key}">${icon(n.icon)}<span class="nav-label">${n.label}</span></div>`;
     }
   });
   $('#nav').innerHTML = html;
-  // 父项 click → 走 goto（由 goto 决定 toggle 或展开+进入默认子页）
-  $$('#nav .nav-parent').forEach(el=>{
-    el.addEventListener('click', (e)=> { e.stopPropagation(); goto(el.dataset.parent); });
+  // 父项左侧（.nav-main）click → 跳默认子页（account→accountQuick；ai→aiNetwork）
+  $$('#nav .nav-parent .nav-main').forEach(el=>{
+    el.addEventListener('click', (e)=> { e.stopPropagation(); goto(el.closest('.nav-parent').dataset.parent); });
+  });
+  // 父项右侧 chevron click → 仅切换展开/收缩，不跳页
+  $$('#nav .nav-parent .nav-chevron').forEach(el=>{
+    el.addEventListener('click', (e)=> { e.stopPropagation(); const key = el.dataset.chev; setNavOpen(key, !navOpen.has(key)); });
   });
   // 子项 click → 进入页面
   $$('#nav .subnav-item').forEach(el=>{
@@ -355,19 +363,13 @@ function navLabel(key){
   return '';
 }
 function goto(key){
-  // 一级菜单（带 children 的父项）：
-  //   - 当前在默认子页（account→accountQuick；ai→children[0]）且已展开 → 收缩
-  //   - 其他情况 → 展开 + 进入默认子页
-  // 这样既保留「我的账本 = 快速记一笔」原行为，又支持 toggle 收缩
+  // 一级菜单（带 children 的父项）：强制展开 + 进入默认子页
+  // （account→accountQuick；ai→children[0]）
+  // 收缩二级菜单请点父项右侧 ▾ 箭头按钮
   const navItem = NAV.find(n=>n.key===key);
   if(navItem && navItem.children){
-    const targetKey = (key === 'account') ? 'accountQuick' : navItem.children[0].key;
-    const isOnDefault = navOpen.has(key) && currentPage === targetKey;
-    if(isOnDefault){
-      setNavOpen(key, false);
-      return;
-    }
     setNavOpen(key, true);
+    const targetKey = (key === 'account') ? 'accountQuick' : navItem.children[0].key;
     currentPage = targetKey;
     $$('#nav .nav-item').forEach(el=>{
       const isActive = el.dataset.page===targetKey || (el.dataset.parent && el.dataset.parent===key);
