@@ -2918,7 +2918,7 @@ function promptCard(p, i){
       tags.map(t => '<span class="prompt-tag tag-note">'+esc(t)+'</span>').join('') +
     '</div>'+
     '<div class="prompt-acts">'+
-      '<button class="btn btn-primary btn-sm" data-action="copyPrompt" data-id="'+esc(p.id)+'">复制</button>'+
+      '<button class="btn btn-ghost btn-sm" data-action="copyPrompt" data-id="'+esc(p.id)+'">复制</button>'+
       '<button class="btn btn-ghost btn-sm" data-action="editPrompt" data-id="'+esc(p.id)+'">编辑</button>'+
       '<button class="btn btn-danger btn-sm" data-action="delPrompt" data-id="'+esc(p.id)+'">删除</button>'+
     '</div>'+
