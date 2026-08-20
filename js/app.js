@@ -16,11 +16,9 @@ const DB = {
 
 const State = {
   tasks:    DB.get('tasks', []),
-  notes:    DB.get('notes', []),
   quotas:   DB.get('quotas', []),
   accounts: DB.get('accounts', []),
   assets:   DB.get('assets', []),   // 资产管家：银行卡余额记录
-  rec:      DB.get('rec', {date:'', movie:'', tv:'', book:''}),
   settings: DB.get('settings', { theme:'light', avatar:'', quotaPwd:'', accountPwd:'', lastExport:'', aiUsage:{} }),
   checkins: DB.get('checkins', []),  // 打卡日志：['YYYY-MM-DD', ...]，仅追加；dailyReset 不触碰
   checkinItems: DB.get('checkinItems', {}), // 打卡具体事项：{date: {items: ['任务名',...], at: timestamp}}；超过 90 天 items 自动清空，date 保留
@@ -92,7 +90,6 @@ pruneOldCheckinItems();
 const monthStr= () => todayStr().slice(0,7);
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-const dayOfMonth = () => new Date().getDate();
 const rand = arr => arr[Math.floor(Math.random()*arr.length)];
 const fmt = n => '¥' + (Math.round(n*100)/100).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2});
 const daysBetween = (a,b) => { const da=new Date(a), db=new Date(b); return Math.floor((db-da)/86400000); };
@@ -141,9 +138,7 @@ function dowCN(ds){
 
 /* ----------------------------- 图标（钝感圆角 + 微阴影） ----------------------------- */
 const GLYPHS = {
-  greeting:'<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5 5l1.4 1.4M17.6 17.6 19 19M19 5l-1.4 1.4M6.4 17.6 5 19"/>',
   todo:'<rect x="3.5" y="4.5" width="6.5" height="3" rx="1.2"/><rect x="3.5" y="10.5" width="6.5" height="3" rx="1.2"/><rect x="3.5" y="16.5" width="6.5" height="3" rx="1.2"/><path d="M13.5 5.2l1.8 1.8 3-3.2M13.5 11.2l1.8 1.8 3-3.2M13.5 17.2l1.8 1.8 3-3.2"/>',
-  notes:'<path d="M4 19.5l3.5-.9L18 8.1a2 2 0 0 0-2.8-2.8L4.9 16 4 19.5z"/><path d="M14.5 7.5l2 2"/>',
   quota:'<rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10.5h18"/><circle cx="17" cy="14.8" r="1.6"/>',
   account:'<rect x="4" y="3" width="16" height="18" rx="2.5"/><path d="M8 8h8M8 12h8M8 16h5"/>',
   ai:'<path d="M12 2.5l2.2 5.6L20 10l-5.8 2.4L12 18l-2.2-5.6L4 10l5.8-1.9z"/>'
@@ -152,9 +147,7 @@ function icon(name, cls){ return `<span class="${cls||'mi'}">${GLYPHS[name]?'<sv
 
 /* ----------------------------- 导航定义 ----------------------------- */
 const NAV = [
-  { key:'greeting', label:'今日问候', icon:'greeting' },
   { key:'todo',     label:'今日待办', icon:'todo' },
-  { key:'notes',    label:'灵感随记', icon:'notes' },
   { key:'quota',    label:'额度追踪', icon:'quota' },
   { key:'account',  label:'我的账本', icon:'account', children:[
     {key:'accountMonth',  label:'本月账单'},
@@ -163,7 +156,7 @@ const NAV = [
   { key:'ai',       label:'AI+',      icon:'ai' }
 ];
 
-let currentPage = 'greeting';
+let currentPage = 'todo';
 const filters = {};   // 各页面筛选状态
 const batch   = {};   // 各页面批量选择状态 {on, sel:Set}
 
@@ -206,8 +199,6 @@ function refreshAcct(){
   else if(currentPage==='accountAsset')  PAGES.accountAsset();
   else PAGES.accountMonth();
 }
-let clockTimer = null;
-let greetingCache = { date:'', text:'' };
 
 /* 页面渲染注册表 & 动作注册表 */
 const PAGES   = {};
@@ -300,7 +291,7 @@ function init(){
   $('#importInput').addEventListener('change', importData);
   $('#avatarInput').addEventListener('change', handleAvatarUpload);
   $('#content').addEventListener('click', onContentClick);
-  goto('greeting');
+  goto('todo');
 }
 
 /* ----------------------------- 导航渲染 ----------------------------- */
@@ -339,7 +330,6 @@ function goto(key){
       });
       $$('#nav .subnav-item').forEach(el=> el.classList.remove('active'));
       $('#pageTitle').textContent = '我的账本';
-      if(clockTimer){ clearInterval(clockTimer); clockTimer=null; }
       $('#sidebar').classList.remove('open');
       if(!$('#modalRoot').classList.contains('show')) $('#overlay').classList.remove('show');
       openPage('accountQuick');
@@ -355,7 +345,6 @@ function goto(key){
   });
   $$('#nav .subnav-item').forEach(el=> el.classList.toggle('active', el.dataset.page===key));
   $('#pageTitle').textContent = navLabel(key) || (NAV.find(n=>n.key===key)||{}).label || '';
-  if(clockTimer){ clearInterval(clockTimer); clockTimer=null; }
   $('.sidebar') && $('#sidebar').classList.remove('open');
   if(!$('#modalRoot').classList.contains('show')) $('#overlay').classList.remove('show');
   openPage(key);
@@ -372,7 +361,7 @@ function openPage(key){
 }
 
 function renderPage(key){
-  (PAGES[key] || PAGES.greeting)();
+  (PAGES[key] || PAGES.todo)();
   $('#content').scrollTop = 0;
 }
 
@@ -430,7 +419,7 @@ function promptPassword(key, onOk){
     else { toast('密码错误','bad'); input.value=''; input.focus(); }
   };
   $('#modalRoot').querySelector('[data-x="ok"]').onclick = tryOk;
-  $('#modalRoot').querySelector('[data-x="cancel"]').onclick = ()=>{ delete $('#modalRoot').dataset.lock; closeModal(); goto('greeting'); };
+  $('#modalRoot').querySelector('[data-x="cancel"]').onclick = ()=>{ delete $('#modalRoot').dataset.lock; closeModal(); goto('todo'); };
   input.addEventListener('keydown', e=>{ if(e.key==='Enter') tryOk(); });
 }
 function openPwdSettings(key){
@@ -475,10 +464,6 @@ function dailyReset(){
     State.settings._lastDay = t;
     saveSettings();
   }
-  if(State.rec.date !== t){
-    State.rec = { date:t, movie:rand(CONFIG.movies), tv:rand(CONFIG.tvs), book:rand(CONFIG.books) };
-    save('rec');
-  }
   // 固定收支：检查今日是否需要入账
   const added = addRecurringToday(t);
   if(added>0) toast('已自动入账 '+added+' 笔固定收支','good');
@@ -498,8 +483,8 @@ function checkExportReminder(){
 function exportData(){
   const data = {
     _app:'日富一日·钱途光明', _exportedAt: nowStr(),
-    tasks:State.tasks, notes:State.notes, quotas:State.quotas,
-    accounts:State.accounts, assets:State.assets, rec:State.rec, settings:State.settings,
+    tasks:State.tasks, quotas:State.quotas,
+    accounts:State.accounts, assets:State.assets, settings:State.settings,
     budgets:State.budgets, recurring:State.recurring,
     checkins:State.checkins, checkinItems:State.checkinItems
   };
@@ -521,17 +506,15 @@ function importData(e){
       const d = JSON.parse(r.result);
       confirmDialog('导入数据', '导入将覆盖当前所有本地数据，确定继续吗？', ()=>{
         State.tasks    = d.tasks    || [];
-        State.notes    = d.notes    || [];
         State.quotas   = d.quotas   || [];
         State.accounts = d.accounts || [];
         State.assets   = d.assets   || [];
-        State.rec      = d.rec      || State.rec;
         State.settings = Object.assign(State.settings, d.settings || {});
         if(d.budgets)      State.budgets      = d.budgets;
         if(d.recurring)    State.recurring    = d.recurring;
         if(d.checkins)     State.checkins     = d.checkins;
         if(d.checkinItems) State.checkinItems = d.checkinItems;
-        save('tasks'); save('notes'); save('quotas'); save('accounts'); save('assets'); save('rec'); saveSettings();
+        save('tasks'); save('quotas'); save('accounts'); save('assets'); saveSettings();
         save('budgets'); save('recurring'); save('checkins'); save('checkinItems');
         updateAvatar(); applyTheme(); checkExportReminder();
         toast('导入成功','good'); renderPage(currentPage);
@@ -647,48 +630,6 @@ function toggleSel(page, id){
   if(batch[page].sel.has(id)) batch[page].sel.delete(id); else batch[page].sel.add(id);
   renderPage(PAGES[page] ? page : currentPage);
 }
-
-/* =============================================================================
- * 页面 0：今日问候（句子在上 · 时间单独一行显眼 · 年月日周几一行）
- * =========================================================================== */
-function getGreeting(){
-  const t = todayStr();
-  if(greetingCache.date !== t){ greetingCache = { date:t, text:'' }; }
-  if(!greetingCache.text){
-    greetingCache.text = (dayOfMonth()%2===1) ? rand(CONFIG.enQuotes) : rand(CONFIG.cnQuotes);
-  }
-  return greetingCache;
-}
-PAGES.greeting = function(){
-  const g = getGreeting();
-  const d = new Date();
-  const week = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'][d.getDay()];
-  const dateStr = d.getFullYear()+'年'+pad(d.getMonth()+1)+'月'+pad(d.getDate())+'日  '+week;
-  $('#content').innerHTML =
-    '<div class="page"><div class="card greet-card">'+
-      /* 左上引号装饰 */
-      '<div class="g-quote-mark">"</div>'+
-      /* 句子 */
-      '<div class="g-text">'+esc(g.text)+'</div>'+
-      /* 时间：单独一行，大字渐变 */
-      '<div class="clock" id="clock">--:--:--</div>'+
-      /* 年月日+周几：小字浅灰 */
-      '<div class="date-line" id="dateline">'+dateStr+'</div>'+
-      /* 换一句按钮 */
-      '<button class="btn btn-primary g-refresh" data-action="reGreeting">换一句</button>'+
-    '</div></div>';
-  updateClock();
-  clockTimer = setInterval(updateClock, 1000);
-};
-function updateClock(){
-  const el = $('#clock'); if(!el) return;
-  const d = new Date();
-  el.textContent = pad(d.getHours())+' : '+pad(d.getMinutes())+' : '+pad(d.getSeconds());
-}
-
-ACTIONS.greeting = {
-  reGreeting(){ greetingCache.text=''; PAGES.greeting(); }
-};
 
 /* =============================================================================
  * 页面 1：今日待办（参照截图：日期头 · 打卡统计 · 进度条 · 底部输入栏 · 本周打卡日历）
@@ -1019,89 +960,6 @@ ACTIONS.todo = {
     openModal(body);
     $('#modalRoot').querySelector('[data-x="cancel"]').onclick = closeModal;
   }
-};
-
-/* =============================================================================
- * 页面 2：灵感随记（参照截图：大卡片推荐 · 图标+类型+名称+副标题 · 便签区）
- * =========================================================================== */
-PAGES.notes = function(){
-  if(!filters.notes) filters.notes = { q:'' };
-  const f = filters.notes;
-  let list = State.notes.slice().sort((a,b)=> b.created - a.created);
-  if(f.q) list = list.filter(n=> n.text.toLowerCase().includes(f.q.toLowerCase()));
-  const b = batch.notes || {on:false,sel:new Set()};
-
-  let html = '<div class="page">';
-  /* ---- 页面标题 ---- */
-  html += '<div class="notes-header"><h2>灵感随记</h2></div>';
-
-  /* ---- 今日推荐（大卡片纵向布局） ---- */
-  html += '<div class="rec-section">'+
-    '<div class="rec-label">✦ 今日推荐</div>';
-  // 电影
-  html += '<div class="rec-card-big">'+
-    '<div class="rcb-icon">🎬</div>'+
-    '<div class="rcb-type">电影</div>'+
-    '<div class="rcb-name">'+esc(State.rec.movie.n || State.rec.movie)+'</div>'+
-    '<div class="rcb-sub">'+esc(State.rec.movie.s || '')+'</div>'+
-    '</div>';
-  // 电视剧
-  html += '<div class="rec-card-big">'+
-    '<div class="rcb-icon">📺</div>'+
-    '<div class="rcb-type">电视剧</div>'+
-    '<div class="rcb-name">'+esc(State.rec.tv.n || State.rec.tv)+'</div>'+
-    '<div class="rcb-sub">'+esc(State.rec.tv.s || '')+'</div>'+
-    '</div>';
-  // 读物
-  html += '<div class="rec-card-big">'+
-    '<div class="rcb-icon">📖</div>'+
-    '<div class="rcb-type">读物</div>'+
-    '<div class="rcb-name">'+esc(State.rec.book.n || State.rec.book)+'</div>'+
-    '<div class="rcb-sub">'+esc(State.rec.book.s || '')+'</div>'+
-    '</div>';
-  html += '<button class="btn btn-ghost btn-sm rec-refresh" data-action="recChange">🔄 换一批</button>';
-  html += '</div>';
-
-  /* ---- 随手记便签区 ---- */
-  html += '<div class="notes-section">'+
-    '<div class="notes-head"><span>📝 随手记</span><button class="btn btn-ghost btn-sm" data-action="batchToggle">'+(b.on?'退出批量':'批量操作')+'</button></div>';
-  html += '<div class="toolbar" style="margin-bottom:10px">'+
-    '<button class="btn btn-primary btn-sm" data-action="addNote">＋ 新增便签</button>'+
-    (b.on ? '<button class="btn btn-danger btn-sm" data-action="batchDel">删除选中 ('+b.sel.size+')</button>' : '')+
-    '</div>';
-  html += '<div class="search"><input class="input" id="noteQ" placeholder="搜索便签…" value="'+esc(f.q)+'"></div>';
-  html += '<div class="note-grid">';
-  if(list.length===0){ html += '<div class="empty" style="grid-column:1/-1"><div class="big">💡</div>还没有便签，记下此刻的灵感吧</div>'; }
-  else {
-    list.forEach((n,i)=>{
-      html += '<div class="note c'+(i%3)+'">';
-      if(b.on) html += '<div class="check'+(b.sel.has(n.id)?' on':'')+'" data-action="sel" data-id="'+n.id+'" style="position:absolute;top:10px;right:10px"> '+(b.sel.has(n.id)?'✓':'')+'</div>';
-      html += '<div class="n-text">'+esc(n.text)+'</div>'+
-              '<div class="n-time">'+n.time+'</div>'+
-              (b.on?'':'<div style="margin-top:8px;text-align:right"><button class="btn btn-danger btn-sm" data-action="delNote" data-id="'+n.id+'">删除</button></div>')+
-              '</div>';
-    });
-  }
-  html += '</div></div></div>';
-  $('#content').innerHTML = html;
-  $('#noteQ').addEventListener('input', e=>{ filters.notes.q=e.target.value; PAGES.notes(); const i=$('#noteQ'); if(i){ i.focus(); i.setSelectionRange(i.value.length,i.value.length); } });
-};
-ACTIONS.notes = {
-  recChange(){ State.rec = { date:todayStr(), movie:rand(CONFIG.movies), tv:rand(CONFIG.tvs), book:rand(CONFIG.books) }; save('rec'); toast('已换一批推荐','good'); PAGES.notes(); },
-  addNote(){ formModal('新增便签', [{key:'text',label:'内容',type:'textarea',placeholder:'写点什么…'}], d=>{
-    if(!d.text){ toast('请输入内容','bad'); return; }
-    State.notes.push({id:uid(), text:d.text, time:nowStr(), created:Date.now()});
-    save('notes'); toast('已保存','good'); PAGES.notes();
-  }); },
-  delNote(id){ confirmDialog('删除便签', '确定删除这条随手记吗？', ()=>{
-    State.notes = State.notes.filter(x=>x.id!==id); save('notes'); toast('已删除'); PAGES.notes();
-  }); },
-  batchToggle(){ toggleBatch('notes'); },
-  sel(id){ toggleSel('notes', id); },
-  batchDel(){ const b=batch.notes; if(!b||b.sel.size===0){ toast('请先选择','bad'); return; }
-    confirmDialog('批量删除', '确定删除选中的 '+b.sel.size+' 条便签吗？', ()=>{
-      State.notes = State.notes.filter(x=>!b.sel.has(x.id)); save('notes'); b.sel.clear(); b.on=false; toast('已删除'); PAGES.notes();
-    }); }
 };
 
 /* =============================================================================
