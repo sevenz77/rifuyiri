@@ -68,16 +68,16 @@ body.dark .sidebar{background:rgba(28,32,64,.72);}
   cursor:pointer; color:var(--muted); font-weight:600; font-size:14.5px; transition:.18s;
   border:1px solid transparent;
 }
-.nav-item .nav-main{flex:1; min-width:0; display:flex; align-items:center; gap:12px;}
+.nav-item .nav-main{flex:7; min-width:0; display:flex; align-items:center; gap:12px;}
 .nav-item .nav-label{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 .nav-item .nav-chevron{
-  flex:0 0 auto; display:flex; align-items:center; justify-content:center;
-  width:24px; height:24px; border-radius:7px; color:var(--muted);
+  flex:0 0 30%; min-width:60px; display:flex; align-items:center; justify-content:center;
+  height:30px; border-radius:8px; color:var(--muted);
   transition:transform .2s, background .14s, color .14s; cursor:pointer; user-select:none;
 }
-.nav-item .nav-chevron svg{width:14px; height:14px; display:block;}
+.nav-item .nav-chevron svg{width:14px; height:14px; display:block; transition:transform .2s;}
 .nav-item .nav-chevron:hover{background:var(--card2); color:var(--primary);}
-.nav-item.nav-parent.open .nav-chevron{transform:rotate(-180deg);}
+.nav-item.nav-parent.open .nav-chevron svg{transform:rotate(-180deg);}
 .nav-item.nav-parent.active .nav-chevron{color:var(--accent);}
 .nav-item:hover{background:var(--card2); color:var(--text);}
 .nav-item.active{

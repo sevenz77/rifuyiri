@@ -363,12 +363,11 @@ function navLabel(key){
   return '';
 }
 function goto(key){
-  // 一级菜单（带 children 的父项）：强制展开 + 进入默认子页
-  // （account→accountQuick；ai→children[0]）
-  // 收缩二级菜单请点父项右侧 ▾ 箭头按钮
+  // 一级菜单（带 children 的父项）：点击左侧文字 → 仅跳默认子页，**不展开/不收缩二级菜单**
+  // （`account`→`accountQuick`；`ai`→`children[0]`）
+  // 展开/收缩二级菜单请点父项右侧 ▾ 箭头按钮
   const navItem = NAV.find(n=>n.key===key);
   if(navItem && navItem.children){
-    setNavOpen(key, true);
     const targetKey = (key === 'account') ? 'accountQuick' : navItem.children[0].key;
     currentPage = targetKey;
     $$('#nav .nav-item').forEach(el=>{
