@@ -333,9 +333,9 @@ function renderNav(){
     }
   });
   $('#nav').innerHTML = html;
-  // 父项 click → 切换展开/收缩
+  // 父项 click → 走 goto（由 goto 决定 toggle 或展开+进入默认子页）
   $$('#nav .nav-parent').forEach(el=>{
-    el.addEventListener('click', (e)=> { e.stopPropagation(); setNavOpen(el.dataset.parent, !navOpen.has(el.dataset.parent)); });
+    el.addEventListener('click', (e)=> { e.stopPropagation(); goto(el.dataset.parent); });
   });
   // 子项 click → 进入页面
   $$('#nav .subnav-item').forEach(el=>{
@@ -355,12 +355,32 @@ function navLabel(key){
   return '';
 }
 function goto(key){
-  // 一级菜单（带 children 的父项）：仅切换展开/收缩，不进入子页
+  // 一级菜单（带 children 的父项）：
+  //   - 当前在默认子页（account→accountQuick；ai→children[0]）且已展开 → 收缩
+  //   - 其他情况 → 展开 + 进入默认子页
+  // 这样既保留「我的账本 = 快速记一笔」原行为，又支持 toggle 收缩
   const navItem = NAV.find(n=>n.key===key);
   if(navItem && navItem.children){
-    setNavOpen(key, !navOpen.has(key));
+    const targetKey = (key === 'account') ? 'accountQuick' : navItem.children[0].key;
+    const isOnDefault = navOpen.has(key) && currentPage === targetKey;
+    if(isOnDefault){
+      setNavOpen(key, false);
+      return;
+    }
+    setNavOpen(key, true);
+    currentPage = targetKey;
+    $$('#nav .nav-item').forEach(el=>{
+      const isActive = el.dataset.page===targetKey || (el.dataset.parent && el.dataset.parent===key);
+      el.classList.toggle('active', !!isActive);
+    });
+    $$('#nav .subnav-item').forEach(el=> el.classList.toggle('active', el.dataset.page===targetKey));
+    $('#pageTitle').textContent = navLabel(targetKey) || navItem.label || '';
+    if($('#sidebar')) $('#sidebar').classList.remove('open');
+    if(!$('#modalRoot').classList.contains('show')) $('#overlay').classList.remove('show');
+    openPage(targetKey);
     return;
   }
+  // 二级菜单子项：进入页面 + 父项自动展开
   currentPage = key;
   const parentKey = (NAV.find(n=>n.children && n.children.some(c=>c.key===key))||{}).key;
   if(parentKey){
