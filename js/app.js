@@ -24,6 +24,7 @@ const State = {
   checkinItems: DB.get('checkinItems', {}), // 打卡具体事项：{date: {items: ['任务名',...], at: timestamp}}；超过 90 天 items 自动清空，date 保留
   budgets:   DB.get('budgets', {}),   // 月度预算：{ 'YYYY-MM': { '餐饮': 1000, ... } }；可为部分分类设置
   recurring: DB.get('recurring', []), // 固定收支：[{ id, name, type, cat, amount, cycle:'monthly', day, lastAdded, paused, note }]
+  prompts:   DB.get('prompts', []),   // 提示词库·私有指令：[{ id, title, desc, tags:[], content }]
 };
 const save = k => DB.set(k, State[k]);
 const saveSettings = () => DB.set('settings', State.settings);
@@ -148,12 +149,16 @@ function icon(name, cls){ return `<span class="${cls||'mi'}">${GLYPHS[name]?'<sv
 /* ----------------------------- 导航定义 ----------------------------- */
 const NAV = [
   { key:'todo',     label:'今日待办', icon:'todo' },
-  { key:'quota',    label:'额度追踪', icon:'quota' },
   { key:'account',  label:'我的账本', icon:'account', children:[
     {key:'accountMonth',  label:'本月账单'},
     {key:'accountYearly', label:'年月概况'},
-    {key:'accountAsset',  label:'资产管家'} ]},
-  { key:'ai',       label:'AI+',      icon:'ai' }
+    {key:'accountAsset',  label:'资产管家'},
+    {key:'quota',         label:'额度追踪'} ]},
+  { key:'ai',       label:'AI+',      icon:'ai', children:[
+    {key:'aiNetwork', label:'工具网络'},
+    {key:'apiKeys',   label:'API KEYS'},
+    {key:'clients',   label:'第三方客户端'},
+    {key:'prompts',   label:'提示词库'} ]}
 ];
 
 let currentPage = 'todo';
@@ -197,6 +202,7 @@ function refreshAcct(){
   if(currentPage==='accountQuick')   PAGES.accountQuick();
   else if(currentPage==='accountYearly') PAGES.accountYearly();
   else if(currentPage==='accountAsset')  PAGES.accountAsset();
+  else if(currentPage==='quota')         PAGES.quota();
   else PAGES.accountMonth();
 }
 
@@ -486,7 +492,8 @@ function exportData(){
     tasks:State.tasks, quotas:State.quotas,
     accounts:State.accounts, assets:State.assets, settings:State.settings,
     budgets:State.budgets, recurring:State.recurring,
-    checkins:State.checkins, checkinItems:State.checkinItems
+    checkins:State.checkins, checkinItems:State.checkinItems,
+    prompts:State.prompts
   };
   const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
@@ -509,12 +516,13 @@ function importData(e){
         State.quotas   = d.quotas   || [];
         State.accounts = d.accounts || [];
         State.assets   = d.assets   || [];
+        State.prompts  = d.prompts  || [];
         State.settings = Object.assign(State.settings, d.settings || {});
         if(d.budgets)      State.budgets      = d.budgets;
         if(d.recurring)    State.recurring    = d.recurring;
         if(d.checkins)     State.checkins     = d.checkins;
         if(d.checkinItems) State.checkinItems = d.checkinItems;
-        save('tasks'); save('quotas'); save('accounts'); save('assets'); saveSettings();
+        save('tasks'); save('quotas'); save('accounts'); save('assets'); save('prompts'); saveSettings();
         save('budgets'); save('recurring'); save('checkins'); save('checkinItems');
         updateAvatar(); applyTheme(); checkExportReminder();
         toast('导入成功','good'); renderPage(currentPage);
@@ -2682,7 +2690,7 @@ function startOcrImport(){
 }
 
 /* =============================================================================
- * 页面 5：AI+ 工具网络（参照截图：Tab筛选 · 分类分组 · 更新时间）
+ * 页面 5：工具网络（AI+ 子菜单：Tab筛选 · 分类分组 · 更新时间）
  * =========================================================================== */
 function aiColor(name){
   let h=0; for(const c of name) h=(h*31+c.charCodeAt(0))%360;
@@ -2706,15 +2714,15 @@ function aiCard(t, showRegion){
 // AI 分类列表（用于分组展示）
 const AI_CATS = ['对话','做图','视频','音乐','写作','编程','日常'];
 
-PAGES.ai = function(){
+PAGES.aiNetwork = function(){
   // Tab 筛选状态
-  if(!filters.ai) filters.ai = { tab:'all' };
-  const ft = filters.ai.tab;
+  if(!filters.aiNetwork) filters.aiNetwork = { tab:'all' };
+  const ft = filters.aiNetwork.tab;
   const top = topUsed();
   let html = '<div class="page">';
 
   /* ---- 头部：标题 + 更新时间 ---- */
-  html += '<div class="ai-header"><h2>AI+</h2><span class="ai-updated">数据更新：'+esc(CONFIG.lastUpdated)+'</span></div>';
+  html += '<div class="ai-header"><h2>工具网络</h2><span class="ai-updated">数据更新：'+esc(CONFIG.lastUpdated)+'</span></div>';
 
   /* ---- 副标题 ---- */
   html += '<div class="ai-sub">国内外 AI 工具网络 · 点击直达官网</div>';
@@ -2752,13 +2760,241 @@ PAGES.ai = function(){
   html += '</div>';
   $('#content').innerHTML = html;
 };
-ACTIONS.ai = {
-  aiTab(_, el){ filters.ai.tab = el.dataset.tab; PAGES.ai(); },
+ACTIONS.aiNetwork = {
+  aiTab(_, el){ filters.aiNetwork.tab = el.dataset.tab; PAGES.aiNetwork(); },
   openAi(_, el){
     const name = el.dataset.name;
     const url  = el.dataset.url;
     const u = State.settings.aiUsage||{}; u[name]=(u[name]||0)+1; State.settings.aiUsage=u; saveSettings();
     window.open(url, '_blank', 'noopener');
+  }
+};
+
+/* =============================================================================
+ * 页面 6：API KEYS（AI+ 子菜单 · 来自 AI+模块专用/ API平台汇总.md）
+ * =========================================================================== */
+function apiPlatformCard(p){
+  let links = '<a class="btn btn-sm btn-primary" href="'+esc(p.openUrl)+'" target="_blank" rel="noopener">'+esc(p.openLabel)+'</a>';
+  if(p.siteUrl && p.siteUrl!==p.openUrl) links += '<a class="btn btn-sm" href="'+esc(p.siteUrl)+'" target="_blank" rel="noopener">官网</a>';
+  const modelLine = p.models ? '代表模型：'+esc(p.models) : '支持模型：'+esc(p.support);
+  return '<div class="card api-card">'+
+    '<div class="api-card-head">'+esc(p.name)+'</div>'+
+    '<div class="api-links">'+links+'</div>'+
+    (p.base ? '<div class="api-base"><span class="api-base-k">base_url</span>'+
+      '<code class="api-base-v">'+esc(p.base)+'</code>'+
+      '<button class="btn btn-ghost btn-sm api-copy" data-action="copyBase" data-url="'+esc(p.base)+'">复制</button></div>' : '')+
+    '<div class="api-models">'+modelLine+'</div>'+
+    (p.note ? '<div class="api-note">'+esc(p.note)+'</div>' : '')+
+  '</div>';
+}
+PAGES.apiKeys = function(){
+  const P = CONFIG.apiPlatforms || { official:[], aggregate:[] };
+  let html = '<div class="page">';
+  html += '<div class="ai-header"><h2>API KEYS</h2><span class="ai-updated">数据更新：'+esc(CONFIG.apiUpdated)+'</span></div>';
+  html += '<div class="ai-sub">国内原生官方平台 + 聚合 / 中转平台 · 开放平台 / 官网可正常联网跳转</div>';
+
+  html += '<div class="section-label ai-cat-head">第一部分 · 国内原生官方模型 API 平台</div>';
+  (P.official||[]).forEach(p=> html += apiPlatformCard(p));
+
+  html += '<div class="section-label ai-cat-head" style="margin-top:18px">第二部分 · API 聚合 / 中转平台</div>';
+  html += '<div class="api-warn">⚠️ 第三方中转不属于国内合规官方服务，存在密钥泄露、链路波动风险，正式业务优先官方直连。</div>';
+  (P.aggregate||[]).forEach(p=> html += apiPlatformCard(p));
+
+  html += '</div>';
+  $('#content').innerHTML = html;
+};
+ACTIONS.apiKeys = {
+  copyBase(_, el){
+    const t = el.dataset.url;
+    const ta = document.createElement('textarea');
+    ta.value = t; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); toast('已复制 base_url','good'); }
+    catch(e){ toast('复制失败，请手动复制','bad'); }
+    ta.remove();
+  }
+};
+
+/* =============================================================================
+ * 页面 7：第三方客户端（AI+ 子菜单 · 来自 AI+模块专用/ 聊天客户端汇总.md）
+ * =========================================================================== */
+function clientCard(c){
+  const dlBtn = c.dl
+    ? '<a class="btn btn-sm btn-primary" href="'+esc(c.dl)+'" target="_blank" rel="noopener">下载</a>'
+    : '<span class="muted" style="font-size:12.5px">暂无公开下载地址</span>';
+  return '<div class="card client-card">'+
+    '<div class="client-head">'+esc(c.name)+'</div>'+
+    '<div class="client-meta"><span class="client-tag">'+esc(c.platform)+'</span></div>'+
+    '<div class="client-fee">'+esc(c.fee)+'</div>'+
+    (c.note ? '<div class="client-note">'+esc(c.note)+'</div>' : '')+
+    '<div class="client-acts">'+dlBtn+'</div>'+
+  '</div>';
+}
+PAGES.clients = function(){
+  const C = CONFIG.thirdPartyClients || { groups:[] };
+  let html = '<div class="page">';
+  html += '<div class="ai-header"><h2>第三方客户端</h2><span class="ai-updated">数据更新：'+esc(CONFIG.clientsUpdated)+'</span></div>';
+  html += '<div class="ai-sub">排序优先级：双端 ＞ 仅 PC ＞ WebUI ＞ 仅安卓</div>';
+  (C.groups||[]).forEach(g=>{
+    html += '<div class="section-label ai-cat-head">'+esc(g.title)+'</div>';
+    html += '<div class="client-grid">';
+    (g.items||[]).forEach(c=> html += clientCard(c));
+    html += '</div>';
+  });
+  html += '</div>';
+  $('#content').innerHTML = html;
+};
+ACTIONS.clients = {};
+
+/* =============================================================================
+ * 页面 8：提示词库（AI+ 子菜单 · 私有指令 + 外部导航）
+ * =========================================================================== */
+function tagsFromString(s){
+  return String(s||'').split(/[,，\s]+/).map(x=>x.trim()).filter(Boolean);
+}
+function promptTags(p){
+  if(Array.isArray(p.tags) && p.tags.length) return p.tags.slice(0,8);
+  // 兼容旧数据：modelTag / note 自动归入 tags
+  const arr = [];
+  if(p.modelTag) arr.push(...String(p.modelTag).split(/[,，\s]+/).filter(Boolean));
+  if(p.note) arr.push(...String(p.note).split(/[,，\s]+/).filter(Boolean));
+  return arr.slice(0,8);
+}
+function promptCard(p, i){
+  const tags = promptTags(p);
+  return '<div class="card prompt-card">'+
+    '<div class="prompt-head">'+esc(p.title)+'</div>'+
+    '<div class="prompt-desc">'+esc(p.desc)+'</div>'+
+    '<div class="prompt-tags">'+
+      tags.map(t => '<span class="prompt-tag tag-note">'+esc(t)+'</span>').join('') +
+    '</div>'+
+    '<div class="prompt-acts">'+
+      '<button class="btn btn-primary btn-sm" data-action="copyPrompt" data-id="'+esc(p.id)+'">复制提示词</button>'+
+      '<button class="btn btn-ghost btn-sm" data-action="editPrompt" data-id="'+esc(p.id)+'">编辑</button>'+
+    '</div>'+
+  '</div>';
+}
+function externalCard(e){
+  const tagClass = e.tag==='Github' ? 'tag-github' : (e.tag==='国内社区' ? 'tag-cn' : 'tag-foreign');
+  return '<div class="card prompt-card external-card">'+
+    '<div class="prompt-head">'+esc(e.name)+'</div>'+
+    '<div class="prompt-desc">'+esc(e.intro)+'</div>'+
+    '<div class="prompt-tags"><span class="prompt-tag '+tagClass+'">'+esc(e.tag)+'</span></div>'+
+    '<div class="prompt-acts">'+
+      '<a class="btn btn-primary btn-sm" href="'+esc(e.url)+'" target="_blank" rel="noopener">打开链接</a>'+
+    '</div>'+
+  '</div>';
+}
+PAGES.prompts = function(){
+  if(!filters.prompts) filters.prompts = { tab:'private' };
+  const ft = filters.prompts.tab;
+
+  // 首次打开时，把内置示例写入本地（用户可编辑/删除）
+  if(!State.prompts.length && CONFIG.privatePrompts && CONFIG.privatePrompts.length){
+    State.prompts = CONFIG.privatePrompts.map(p => Object.assign({}, p));
+    save('prompts');
+  }
+
+  // 兼容迁移：旧 modelTag/note 字段 -> tags 数组
+  let migrated = false;
+  State.prompts.forEach(p => {
+    if(!Array.isArray(p.tags)){
+      p.tags = promptTags(p);
+      delete p.modelTag;
+      delete p.note;
+      migrated = true;
+    }
+  });
+  if(migrated) save('prompts');
+
+  let html = '<div class="page">';
+  html += '<div class="ai-header"><h2>提示词库</h2><span class="ai-updated">数据更新：'+esc(CONFIG.promptsUpdated)+'</span></div>';
+  html += '<div class="ai-sub">私有指令本地保存 · 外部导航只做网址聚合</div>';
+
+  html += '<div class="ai-tabs">'+
+    '<button class="ai-tab'+(ft==='all'?' active':'')+'" data-action="promptTab" data-tab="all">全部</button>'+
+    '<button class="ai-tab'+(ft==='private'?' active':'')+'" data-action="promptTab" data-tab="private">私有指令</button>'+
+    '<button class="ai-tab'+(ft==='external'?' active':'')+'" data-action="promptTab" data-tab="external">外部导航</button>'+
+    '</div>';
+
+  const showPrivate = ft==='all' || ft==='private';
+  const showExternal = ft==='all' || ft==='external';
+
+  if(showPrivate){
+    if(ft==='private'){
+      html += '<div class="toolbar" style="margin:0 0 12px"><button class="btn btn-primary btn-sm" data-action="addPrompt">＋ 新增私有指令</button></div>';
+    }
+    if(State.prompts.length===0){
+      html += '<div class="empty" style="padding:16px;color:var(--muted)">暂无私有指令，点击右上角「＋ 新增」或从 config.js 初始化。</div>';
+    } else {
+      html += '<div class="prompt-grid">';
+      State.prompts.forEach(p => html += promptCard(p));
+      html += '</div>';
+    }
+  }
+
+  if(showExternal){
+    if(ft==='all') html += '<div class="section-label ai-cat-head" style="margin-top:18px">外部提示词资源导航</div>';
+    const exts = CONFIG.externalPrompts || [];
+    if(exts.length===0){
+      html += '<div class="empty" style="padding:16px;color:var(--muted)">暂无外部导航数据。</div>';
+    } else {
+      html += '<div class="prompt-grid">';
+      exts.forEach(e => html += externalCard(e));
+      html += '</div>';
+    }
+  }
+
+  html += '</div>';
+  $('#content').innerHTML = html;
+};
+ACTIONS.prompts = {
+  promptTab(_, el){ filters.prompts.tab = el.dataset.tab; PAGES.prompts(); },
+  copyPrompt(_, el){
+    const id = el.dataset.id;
+    const p = State.prompts.find(x=>x.id===id);
+    if(!p) return;
+    const ta = document.createElement('textarea');
+    ta.value = p.content || ''; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); toast('已复制提示词','good'); }
+    catch(e){ toast('复制失败，请手动复制','bad'); }
+    ta.remove();
+  },
+  addPrompt(){
+    formModal('新增私有指令', [
+      {key:'title', label:'标题', type:'text', placeholder:'例如：小说场景扩写'},
+      {key:'desc', label:'简短描述', type:'text', placeholder:'一句话说明用途'},
+      {key:'tags', label:'分类标签', type:'text', placeholder:'逗号或空格分隔，例如：写作, Claude, 小红书'},
+      {key:'content', label:'提示词内容', type:'textarea', placeholder:'完整 Prompt 模板，可用 {{变量}} 占位'}
+    ], d=>{
+      if(!d.title || !d.content){ toast('标题和提示词内容不能为空','bad'); return; }
+      State.prompts.push({ id:'p_'+Date.now()+'_'+Math.random().toString(36).slice(2,6), title:d.title, desc:d.desc||'', tags:tagsFromString(d.tags), content:d.content });
+      save('prompts'); toast('已保存','good'); PAGES.prompts();
+    });
+  },
+  editPrompt(_, el){
+    const id = el.dataset.id;
+    const p = State.prompts.find(x=>x.id===id);
+    if(!p) return;
+    const tagsStr = (Array.isArray(p.tags)?p.tags:promptTags(p)).join('，');
+    formModal('编辑私有指令', [
+      {key:'title', label:'标题', type:'text', value:p.title},
+      {key:'desc', label:'简短描述', type:'text', value:p.desc},
+      {key:'tags', label:'分类标签', type:'text', value:tagsStr, placeholder:'逗号或空格分隔'},
+      {key:'content', label:'提示词内容', type:'textarea', value:p.content}
+    ], d=>{
+      if(!d.title || !d.content){ toast('标题和提示词内容不能为空','bad'); return; }
+      Object.assign(p, { title:d.title, desc:d.desc||'', tags:tagsFromString(d.tags), content:d.content });
+      delete p.modelTag; delete p.note;
+      save('prompts'); toast('已更新','good'); PAGES.prompts();
+    }, { extra:'<button class="btn btn-danger btn-sm" data-action="delPrompt" data-id="'+esc(id)+'">删除</button>' });
+  },
+  delPrompt(_, el){
+    const id = el.dataset.id;
+    confirmDialog('删除私有指令', '确定删除这条私有指令吗？', ()=>{
+      State.prompts = State.prompts.filter(x=>x.id!==id); save('prompts'); toast('已删除'); PAGES.prompts();
+    });
   }
 };
 

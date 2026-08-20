@@ -556,6 +556,55 @@ body.dark .ai-tag.foreign{background:#3a2818; color:#ff9a50; border-color:#5a402
 /* AI 卡片微调 */
 .ai-card{padding:14px 8px;}
 
+/* API KEYS 平台卡 */
+.api-card{padding:16px;}
+.api-card-head{font-size:16px; font-weight:800; margin-bottom:10px;}
+.api-links{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;}
+.api-base{display:flex; align-items:center; gap:8px; background:var(--card2); border:1px solid var(--line); border-radius:10px; padding:8px 10px; margin-bottom:8px; flex-wrap:wrap;}
+.api-base-k{font-size:11px; font-weight:800; color:var(--primary); letter-spacing:1px; flex:0 0 auto;}
+.api-base-v{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; color:var(--text); word-break:break-all; flex:1 1 auto; cursor:text;}
+.api-copy{flex:0 0 auto;}
+.api-models{font-size:13px; color:var(--text); margin-bottom:6px;}
+.api-note{font-size:12.5px; color:var(--muted); line-height:1.6;}
+.api-warn{font-size:12.5px; color:#c54b00; background:#fff5ec; border:1px solid #ffdcc4; border-radius:10px; padding:10px 12px; margin-bottom:14px;}
+body.dark .api-warn{color:#ff9a50; background:#3a2818; border-color:#5a4028;}
+body.dark .api-base{background:rgba(255,255,255,.04);}
+
+/* 第三方客户端卡 */
+.client-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:12px; margin-bottom:8px;}
+.client-card{padding:16px; display:flex; flex-direction:column; gap:8px;}
+.client-head{font-size:16px; font-weight:800;}
+.client-tag{display:inline-block; font-size:11px; font-weight:700; color:#1a5fa7; background:#e7f0fb; border:1px solid #cfe0f5; border-radius:999px; padding:3px 10px;}
+body.dark .client-tag{color:#7db4ef; background:#16283f; border-color:#223a57;}
+.client-fee{font-size:13px; color:var(--text);}
+.client-note{font-size:12.5px; color:var(--muted); line-height:1.6;}
+.client-acts{margin-top:4px;}
+
+/* 提示词库 */
+.prompt-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:12px; margin-bottom:8px;}
+.prompt-card{padding:16px; display:flex; flex-direction:column; gap:8px;}
+.prompt-head{font-size:16px; font-weight:800; line-height:1.4;}
+.prompt-desc{font-size:13px; color:var(--muted); line-height:1.5;}
+.prompt-tags{display:flex; flex-wrap:wrap; gap:6px;}
+.prompt-tag{display:inline-block; font-size:11px; font-weight:700; border-radius:999px; padding:3px 10px;}
+.prompt-tag.tag-model{color:#1a5fa7; background:#e7f0fb; border:1px solid #cfe0f5;}
+.prompt-tag.tag-claude{color:#6b4f1a; background:#fdf6d6; border:1px solid #f0e2b3;}
+.prompt-tag.tag-general{color:#2f7a4a; background:#e6f6ed; border:1px solid #c5ebd4;}
+.prompt-tag.tag-note{color:var(--muted); background:var(--card2); border:1px solid var(--line);}
+.prompt-tag.tag-github{color:#3a3a3a; background:#f0f0f0; border:1px solid #d0d0d0;}
+.prompt-tag.tag-cn{color:#9a3a1a; background:#fff0e6; border:1px solid #ffd4c2;}
+.prompt-tag.tag-foreign{color:#5a3a9a; background:#f0ebff; border:1px solid #ddd6f5;}
+body.dark .prompt-tag.tag-model{color:#7db4ef; background:#16283f; border-color:#223a57;}
+body.dark .prompt-tag.tag-claude{color:#f0d78c; background:#3a3118; border-color:#5a4f28;}
+body.dark .prompt-tag.tag-general{color:#7ce2a8; background:#163a26; border-color:#23563a;}
+body.dark .prompt-tag.tag-note{background:rgba(255,255,255,.06); border-color:rgba(255,255,255,.1);}
+body.dark .prompt-tag.tag-github{color:#e0e0e0; background:#2a2a2a; border-color:#4a4a4a;}
+body.dark .prompt-tag.tag-cn{color:#ffb38a; background:#3a1f14; border-color:#5a3320;}
+body.dark .prompt-tag.tag-foreign{color:#bfa8ff; background:#2a1f4a; border-color:#3f3068;}
+.prompt-acts{display:flex; gap:8px; margin-top:4px;}
+.prompt-acts .btn{flex:1; text-align:center; justify-content:center;}
+.external-card .prompt-desc{min-height:0;}
+
 /* ----------------------------- 响应式（手机端抽屉） ----------------------------- */
 @media (max-width:760px){
   .hamburger{display:flex; align-items:center; justify-content:center;}

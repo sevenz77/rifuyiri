@@ -162,5 +162,102 @@ const CONFIG = {
     { name:'Canva AI',    url:'https://canva.com',                      cat:'日常', region:'foreign' }
   ],
   // 数据更新时间标注（每月更新时修改此值）
-  lastUpdated: '2026-08'
+  lastUpdated: '2026-08',
+
+  /* =========================================================================
+   * AI+ · API KEYS（国内原生官方平台 + 聚合/中转平台）
+   * 字段：name 名称, openLabel 主入口标签, openUrl 主入口地址,
+   *       siteUrl 官网地址(可选), base 接入 base_url, models/support 模型说明, note 备注
+   * 维护：说「更新【AI+模块】」时，由 AI 读取 AI+模块专用/ 下对应 .md 重建本段，并改 apiUpdated。
+   * ======================================================================= */
+  apiUpdated: '2026-08-21 01:51',
+  apiPlatforms: {
+    official: [
+      { name:'DeepSeek 深度求索', openLabel:'开放平台', openUrl:'https://platform.deepseek.com/', siteUrl:'https://www.deepseek.com', base:'https://api.deepseek.com/v1', models:'deepseek-v4-pro、deepseek-v4-flash', note:'1M 上下文；V4-Pro 2026-08-13 正式 GA；V3 系列别名 deepseek-chat / deepseek-reasoner 2026-07-24 停止维护，不建议新接入。' },
+      { name:'Moonshot AI 月之暗面（Kimi API）', openLabel:'开放平台', openUrl:'https://platform.moonshot.cn/', siteUrl:'https://kimi.moonshot.cn', base:'https://api.moonshot.cn/v1', models:'kimi-k3、kimi-k3-swarm-max', note:'百万上下文、原生多模态；kimi-k3 2026-07-16 正式上线 API，2026-07-27 开源权重；旧 k2 系列逐步降级维护。' },
+      { name:'智谱 AI GLM', openLabel:'开放平台', openUrl:'https://open.bigmodel.cn/', siteUrl:'https://www.bigmodel.cn', base:'https://open.bigmodel.cn/api/paas/v4', models:'GLM-5.2、GLM-5V-Turbo', note:'GLM-5.2 2026-06-17 上线开源 MIT 协议，百万无损长上下文；GLM-5.3 内测待发布，新接入优先 5.2；GLM-4 系列逐步下线。' },
+      { name:'阿里云百炼（通义千问 Qwen）', openLabel:'开放平台', openUrl:'https://bailian.console.aliyun.com/', siteUrl:'https://www.aliyun.com/product/tongyi', base:'https://dashscope.aliyuncs.com/compatible-mode/v1', models:'Qwen3.5-Max、Qwen3.5-Plus、QwQ-32B', note:'Qwen3.5 为当前主力，Qwen3.8 灰度测试中；QwQ-32B 推理模型可用，原生 Function Calling；Qwen3 系列旧版本不再推荐新接入。' },
+      { name:'零一万物 Yi 大模型', openLabel:'开放平台', openUrl:'https://platform.lingyiwanwu.com/', siteUrl:'https://www.lingyiwanwu.com', base:'https://api.lingyiwanwu.com/v1', models:'Yi-Lightning、Yi-Vision-v2', note:'Yi-Lightning 智能路由旗舰；Yi-Vision-v2 最新视觉版本；老 Yi-34B 已归档。' },
+      { name:'百川智能', openLabel:'开放平台', openUrl:'https://platform.baichuan-ai.com/', siteUrl:'https://www.baichuan-ai.com', base:'https://api.baichuan-ai.com/v1', models:'Baichuan4-Turbo、Baichuan4-Air', note:'Baichuan4 系列为当前主力；Baichuan3-Turbo-128k 进入维护期；医疗专项 Baichuan-M4 / M3-Plus。' },
+      { name:'阶跃星辰 StepFun', openLabel:'开放平台', openUrl:'https://platform.stepfun.com/', siteUrl:'https://www.stepfun.com', base:'https://api.stepfun.com/v1', models:'Step-3.7-Flash、Step-3.5-Flash', note:'Step-3.7-Flash 旗舰多模态，支持视频理解 + Agent 工具调用；Step-3.5-Flash 开源基座；老 Step-3 系列停止迭代。' },
+      { name:'MiniMax ABAB', openLabel:'开放平台', openUrl:'https://platform.minimaxi.com/', siteUrl:'https://www.minimaxi.com', base:'https://api.minimaxi.chat/v1', models:'MiniMax-M2、MiniMax-M2.7', note:'M2.7 为最新迭代版本，面向 Agent / 代码；限时免费政策至 2026-11；ABAB-6.x 旧模型逐步下线。' },
+      { name:'腾讯混元 TokenHub', openLabel:'控制台', openUrl:'https://console.cloud.tencent.com/tokenhub', siteUrl:'https://cloud.tencent.com/product/hunyuan', base:'https://api.hunyuan.cloud.tencent.com/v1', models:'hunyuan-hy3、Hy-MT2-30B-A3B', note:'Hy3 2026-07-06 GA，Apache 2.0 开源 MoE；Hy-MT2 多语种翻译；旧 hy2 系列归档。' },
+      { name:'百度千帆 文心一言 ERNIE', openLabel:'开放平台', openUrl:'https://console.bce.baidu.com/qianfan', siteUrl:'https://ai.baidu.com/wenxin', base:'https://qianfan.baidubce.com/v2', models:'ERNIE-5.1、ERNIE-5.0', note:'ERNIE-5.1 最新迭代，强化 Agent 深度搜索；4.x 系列逐步缩减配额。' },
+      { name:'火山引擎方舟 豆包 Doubao', openLabel:'控制台', openUrl:'https://console.volcengine.com/ark', siteUrl:'https://www.volcengine.com/ark', base:'https://ark.cn-beijing.volces.com/api/v3', models:'Doubao-Seed-2.1-Pro、Doubao-Seed-2.1-Turbo', note:'调用必须填写对应 Endpoint 接入点。Seed-2.1 系列 2026-06-23 发布，Coding、VLM、Agent 能力增强；旧 Seed-1.x 不再推荐。' },
+      { name:'科大讯飞星火', openLabel:'开放平台', openUrl:'https://xinghuo.xfyun.cn/openapi', siteUrl:'https://www.xfyun.cn', base:'https://maas-api.cn-huabei-1.xf-yun.com/v2', models:'星火 X2、星火 X2-Flash、星火 X2-VL', note:'X2 全系列当前主力；X1 系列进入维护模式。' }
+    ],
+    aggregate: [
+      { name:'硅基流动 SiliconCloud', openLabel:'控制台', openUrl:'https://cloud.siliconflow.cn/', siteUrl:'https://siliconflow.cn', base:'https://api.siliconflow.cn/v1', support:'国内 + 国外（以开源模型为主）', note:'国内直连，大量国产开源模型；同时支持 Llama、Gemma 等海外开源；闭源 GPT / Claude 不提供；新用户实名赠送代金券。' },
+      { name:'n1n.ai', openLabel:'官网', openUrl:'https://n1n.ai', siteUrl:'', base:'https://api.n1n.ai/v1', support:'国内 + 国外', note:'企业向聚合平台；国产全系列 + GPT / Claude / Gemini 海外闭源；支持支付宝、对公转账、增值税发票；亚洲专线优化海外模型访问。' },
+      { name:'DMXAPI', openLabel:'官网', openUrl:'https://dmxapi.com', siteUrl:'', base:'https://dmxapi.com/v1', support:'国内 + 国外', note:'覆盖国产模型、OpenAI、Anthropic、Google 系列以及 Midjourney / Suno 多模态；晚高峰并发稳定性一般，适合非强实时场景。' },
+      { name:'数眼智能 DataEyesAI', openLabel:'官网', openUrl:'https://shuyanai.com', siteUrl:'', base:'https://api.shuyanai.com/v1', support:'国内 + 国外', note:'多条线路可选；国产 + 海外闭源模型；支持对公开票，兼容 Cursor 等开发工具。' },
+      { name:'白山智算', openLabel:'官网', openUrl:'https://ai.baishan.com', siteUrl:'', base:'https://api.edgefn.net/v1', support:'国内 + 国外', note:'聚合主流国产开源与海外主流模型；人民币按量计费。' },
+      { name:'ModelScope 魔搭社区', openLabel:'控制台', openUrl:'https://modelscope.cn/', siteUrl:'', base:'https://modelscope.cn/api/v1', support:'国内为主，少量海外开源', note:'阿里达摩院开源社区；以 Qwen 系列国产开源权重为主；海外闭源模型不提供。' },
+      { name:'云雾API CloudMist', openLabel:'官网', openUrl:'https://www.cloudmist.cloud', siteUrl:'', base:'https://api.cloudmist.cloud/v1', support:'国内 + 国外', note:'国内网络直连；国产 + 海外闭源模型；注册赠送小额测试额度。' },
+      { name:'算桥API（算家云）', openLabel:'官网', openUrl:'https://suanjiayun.com', siteUrl:'', base:'https://api.suanjiayun.com/v1', support:'国内 + 国外', note:'自有 GPU 算力兜底；兼容 OpenAI 接口；同时支持国产以及 GPT-4o、Claude、Gemini 等海外旗舰模型，适合个人中小团队。' },
+      { name:'OpenCode Go', openLabel:'官网', openUrl:'https://opencode.ai/go', siteUrl:'', base:'https://opencode.ai/zen/go/v1', support:'国外为主（侧重代码类开源模型）', note:'统一网关聚合海外第三方代码向模型；OpenAI 兼容接口；包月订阅为主（首月 5 美元，续购每月 10 美元）；支付宝人民币支付；API 接口大陆可直连；非国内合规平台，仅限个人测试。' },
+      { name:'AI GO CODE（AIGoCode）', openLabel:'控制台', openUrl:'https://www.aigocode.com/dashboard/console', siteUrl:'https://aigocode.com', base:'https://aigocode.com/v1', support:'国外为主（Claude、Codex、Gemini 等，侧重代码/编程场景）', note:'一站式 AI 编程工作台；OpenAI / Anthropic / Google 兼容接口；计费采用「订阅额度 + 灵活额度」双轨：订阅套餐 4 周起（Standard ¥399/4周、Premium ¥899/4周、Professional ¥1799/4周），灵活额度 ¥50=$50 永久有效；支持微信 / 支付宝 / 信用卡人民币支付；国内网络直连；无免费注册额度；适合专业开发者与团队编程协作。' }
+    ]
+  },
+
+  /* =========================================================================
+   * AI+ · 第三方聊天客户端（按平台优先级四大分组）
+   * 字段：name 名称, platform 平台, dl 下载链接(可空), fee 收费, note 备注
+   * 维护：说「更新【AI+模块】」时，由 AI 读取 AI+模块专用/ 下对应 .md 重建本段，并改 clientsUpdated。
+   * ======================================================================= */
+  clientsUpdated: '2026-08-21 01:56',
+
+  /* =========================================================================
+   * AI+ · 提示词库
+   * 字段：
+   *   privatePrompts: [{ id, title, desc, tags:[], content }]
+   *   externalPrompts: [{ name, intro, tag:'Github'|'国内社区'|'海外', url }]
+   * 维护：说「更新【AI+模块】」时，由 AI 读取 AI+模块专用/ 下对应 .md 重建本段，并改 promptsUpdated。
+   * ========================================================================= */
+  promptsUpdated: '2026-08-21 02:27',
+  privatePrompts: [
+    { id:'prompt-1', title:'新媒体标题党生成器', desc:'输入主题，输出 5 个高点击率标题', tags:['通用对话模型','新媒体','标题党'], content:'你是一位资深新媒体编辑。请围绕用户给定的主题，输出 5 个不同风格的标题（悬念型、数字型、对比型、痛点型、共鸣型），并简要说明每个标题的吸睛点。主题：{{主题}}' },
+    { id:'prompt-2', title:'小说场景扩写', desc:'把一句话梗概扩展成 300 字细腻场景', tags:['Claude','GPT-4','写作'], content:'你擅长细腻的场景描写。请将下面的一句话梗概扩写成一段约 300 字的场景描写，保留省略号与留白，避免 AI 味句式。梗概：{{梗概}}' },
+    { id:'prompt-3', title:'Excel 数据清洗', desc:'把脏数据整理成结构化表格', tags:['通用对话模型','办公','表格'], content:'请将用户提供的原始文本数据清洗并整理成 Markdown 表格。要求：1) 统一日期格式为 YYYY-MM-DD；2) 金额统一保留两位小数；3) 去除空行与重复项；4) 在表格下方给出清洗说明。数据：{{数据}}' },
+    { id:'prompt-4', title:'AI 工具选型对比', desc:'输入需求，给出三款工具横向对比', tags:['通用对话模型','决策','工具'], content:'用户有一个具体需求，请推荐 3 款最合适的工具/方案，用表格对比价格、优缺点、适用场景，并给出最终推荐。需求：{{需求}}' }
+  ],
+  externalPrompts: [
+    { name:'AiShort', intro:'中文 AI 快捷指令表，分类清晰、一键复制', tag:'国内社区', url:'https://www.aishort.top/' },
+    { name:'LangGPT', intro:'结构化提示词方法论与模板社区', tag:'Github', url:'https://github.com/EmbraceAGI/LangGPT' },
+    { name:'PromptBase', intro:'提示词交易市场，覆盖写作、图像、编程', tag:'海外', url:'https://promptbase.com' },
+    { name:'FlowGPT', intro:'海外最大提示词分享与聊天社区', tag:'海外', url:'https://flowgpt.com' },
+    { name:'PromptHero', intro:'全球最大提示词库之一，覆盖文生图、ChatGPT 等', tag:'海外', url:'https://prompthero.com' },
+    { name:'SnackPrompt', intro:'团队协作型提示词库，可按角色/场景筛选', tag:'海外', url:'https://snackprompt.com' },
+    { name:'AIPRM', intro:'浏览器插件，直接在 ChatGPT 页面调用数千 Prompt', tag:'海外', url:'https://www.aiprm.com' },
+    { name:'发现 AI 指令', intro:'高阶 AI 指令词合集，覆盖内容创作、电商、学术等', tag:'国内社区', url:'https://www.faxianai.com/prompt/deepseek' },
+    { name:'Awesome ChatGPT Prompts', intro:'英文经典提示词仓库，持续更新', tag:'Github', url:'https://github.com/f/awesome-chatgpt-prompts' }
+  ],
+
+  thirdPartyClients: {
+    groups: [
+      { title:'Windows + 原生安卓双端', items:[
+        { name:'Kelivo', platform:'Windows/macOS/Linux + 原生 Android', dl:'https://github.com/Chevey339/kelivo', fee:'全部功能免费；仅自愿赞助，无功能锁定', note:'开源，支持 MCP、多模态、密钥本地加密，同时支持 iOS、鸿蒙安装包。' },
+        { name:'Chatbox AI', platform:'Windows/macOS/Linux + 原生 Android', dl:'https://github.com/Bin-Huang/chatbox', fee:'核心功能永久免费；可选 Pro 云同步订阅（非必需）', note:'支持 WebDAV 会话同步。' },
+        { name:'NextChat（打包客户端版）', platform:'Windows/macOS/Linux + 原生 Android', dl:'https://github.com/ChatGPTNextWeb/ChatGPT-Next-Web', fee:'本地客户端免费开源；官方网页托管版付费', note:'轻量化，兼容 OpenAI 格式接口，支持语音对话、Prompt 模板。' },
+        { name:'Operit AI', platform:'Windows + 原生 Android', dl:'https://github.com/AAswordman/Operit', fee:'基础功能免费；高级 Agent / 自动化功能付费解锁', note:'安卓悬浮窗、MCP、本地模型支持。' }
+      ]},
+      { title:'仅 PC 桌面端（Windows/macOS/Linux）', items:[
+        { name:'Cherry Studio', platform:'Windows/macOS/Linux（仅 PC）', dl:'https://github.com/CherryHQ/cherry-studio', fee:'个人社区版永久免费；商业场景付费授权', note:'支持 MCP、文档解析、多模型对比。' },
+        { name:'Jan', platform:'Windows/macOS/Linux（仅 PC）', dl:'https://github.com/janhq/jan', fee:'基础版免费；Pro 订阅付费', note:'本地 GGUF 模型 + OpenAI 标准 API 兼容。' },
+        { name:'LM Studio', platform:'Windows/macOS/Linux（仅 PC）', dl:'https://lmstudio.ai', fee:'完全免费无内购', note:'主打本地大模型运行。' },
+        { name:'AnythingLLM', platform:'Windows/macOS/Linux（仅 PC）', dl:'https://github.com/Mintplex-Labs/anything-llm', fee:'本地部署免费；官方云端托管订阅收费', note:'RAG 知识库，适合大批量文档问答。' }
+      ]},
+      { title:'WebUI 方案（PC 浏览器；安卓仅 PWA）', items:[
+        { name:'LobeChat', platform:'PC 浏览器；安卓 PWA 适配', dl:'https://github.com/lobehub/lobe-chat', fee:'自部署开源免费；官方云托管订阅收费', note:'插件、Agent、MCP 生态完善。' },
+        { name:'Open WebUI', platform:'PC 浏览器；安卓 PWA 适配', dl:'https://github.com/open-webui/open-webui', fee:'开源完全免费，无软件订阅', note:'原生适配 Ollama，兼容各类 API 服务商。' },
+        { name:'LibreChat', platform:'PC 浏览器；安卓 PWA 适配', dl:'https://github.com/danny-avila/LibreChat', fee:'自部署免费开源；官方托管服务付费', note:'多用户管理，内置大量模型预设。' }
+      ]},
+      { title:'仅安卓原生客户端', items:[
+        { name:'Maid', platform:'仅 Android', dl:'https://github.com/Mobile-Artificial-Intelligence/maid', fee:'基础开源免费；捐赠解锁额外功能', note:'轻量手机对话工具。' },
+        { name:'LMSA', platform:'仅 Android', dl:'https://github.com/peterrhone/LMSA', fee:'免费版功能受限；Pro 一次性买断', note:'支持本地模型 + 远程 API。' },
+        { name:'YourOwnAI', platform:'仅 Android', dl:'https://github.com/OlgaKalinina101/YourOwnAI', fee:'基础免费，高级功能订阅制', note:'移动端多模态对话。' },
+        { name:'RikkaHub', platform:'仅 Android', dl:'https://github.com/rikkahub/rikkahub', fee:'开源免费，无付费锁定', note:'Material You 现代 UI，支持 MCP、工作区 Agent、多模态，支持自定义请求头。' }
+      ]}
+    ]
+  }
 };
