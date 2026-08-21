@@ -25,6 +25,7 @@ const State = {
   budgets:   DB.get('budgets', {}),   // 月度预算：{ 'YYYY-MM': { '餐饮': 1000, ... } }；可为部分分类设置
   recurring: DB.get('recurring', []), // 固定收支：[{ id, name, type, cat, amount, cycle:'monthly', day, lastAdded, paused, note }]
   prompts:   DB.get('prompts', []),   // 提示词库·私有指令：[{ id, title, desc, tags:[], content }]
+  externalUser: DB.get('externalUser', []), // 提示词库·外部导航·用户手动添加：[{ id, name, url }]
 };
 const save = k => DB.set(k, State[k]);
 const saveSettings = () => DB.set('settings', State.settings);
@@ -542,7 +543,7 @@ function exportData(){
     accounts:State.accounts, assets:State.assets, settings:State.settings,
     budgets:State.budgets, recurring:State.recurring,
     checkins:State.checkins, checkinItems:State.checkinItems,
-    prompts:State.prompts
+    prompts:State.prompts, externalUser:State.externalUser
   };
   const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
@@ -566,12 +567,13 @@ function importData(e){
         State.accounts = d.accounts || [];
         State.assets   = d.assets   || [];
         State.prompts  = d.prompts  || [];
+        State.externalUser = d.externalUser || [];
         State.settings = Object.assign(State.settings, d.settings || {});
         if(d.budgets)      State.budgets      = d.budgets;
         if(d.recurring)    State.recurring    = d.recurring;
         if(d.checkins)     State.checkins     = d.checkins;
         if(d.checkinItems) State.checkinItems = d.checkinItems;
-        save('tasks'); save('quotas'); save('accounts'); save('assets'); save('prompts'); saveSettings();
+        save('tasks'); save('quotas'); save('accounts'); save('assets'); save('prompts'); save('externalUser'); saveSettings();
         save('budgets'); save('recurring'); save('checkins'); save('checkinItems');
         updateAvatar(); applyTheme(); checkExportReminder();
         toast('导入成功','good'); renderPage(currentPage);
@@ -2924,12 +2926,17 @@ function promptCard(p, i){
     '</div>'+
   '</div>';
 }
-function externalCard(e){
+function externalCard(e, opts){
+  opts = opts || {};
+  const isGithub = e.source === 'github';
+  // 用户手动添加的条目支持删除
+  const delBtn = opts.user ? '<button class="btn btn-sm btn-danger" data-action="delExternal" data-id="'+esc(e.id)+'">删除</button>' : '';
   return '<div class="card prompt-card external-card">'+
-    '<div class="prompt-head">'+esc(e.name)+'</div>'+
-    '<div class="prompt-desc">'+esc(e.intro)+'</div>'+
+    '<div class="prompt-head">'+esc(e.name)+ (isGithub ? ' <span class="ext-badge ext-github">GitHub</span>' : '') +'</div>'+
+    '<div class="prompt-desc">'+esc(e.intro||'')+'</div>'+
     '<div class="prompt-acts">'+
-      '<a class="btn btn-primary btn-sm" href="'+esc(e.url)+'" target="_blank" rel="noopener">打开链接</a>'+
+      '<a class="btn btn-sm btn-primary" href="'+esc(e.url)+'" target="_blank" rel="noopener">打开链接</a>'+
+      delBtn+
     '</div>'+
   '</div>';
 }
@@ -2963,7 +2970,7 @@ PAGES.prompts = function(){
 
   let html = '<div class="page">';
   html += '<div class="ai-header"><h2>提示词库</h2><span class="ai-updated">数据更新：'+esc(CONFIG.promptsUpdated)+'</span></div>';
-  html += '<div class="ai-sub">私有指令本地保存 · 外部导航只做网址聚合</div>';
+  html += '<div class="ai-sub">私有指令本地保存 · 外部导航含 GitHub 仓库（角标标记）· 用户可手动添加链接</div>';
 
   html += '<div class="ai-tabs">'+
     '<button class="ai-tab'+(ft==='all'?' active':'')+'" data-action="promptTab" data-tab="all">全部</button>'+
@@ -2996,12 +3003,18 @@ PAGES.prompts = function(){
 
   if(showExternal){
     if(ft==='all') html += '<div class="section-label ai-cat-head" style="margin-top:18px">外部提示词资源导航</div>';
-    const exts = CONFIG.externalPrompts || [];
+    if(ft==='external'){
+      html += '<div class="toolbar" style="margin:0 0 12px"><button class="btn btn-primary btn-sm" data-action="addExternal">＋ 手动添加链接</button></div>';
+    }
+    const cfgExts = CONFIG.externalPrompts || [];
+    const userExts = (State.externalUser || []).map(x => Object.assign({}, x, { source: x.source || 'site' }));
+    const exts = cfgExts.concat(userExts);
     if(exts.length===0){
       html += '<div class="empty" style="padding:16px;color:var(--muted)">暂无外部导航数据。</div>';
     } else {
       html += '<div class="prompt-grid">';
-      exts.forEach(e => html += externalCard(e));
+      cfgExts.forEach(e => html += externalCard(e, { user:false }));
+      userExts.forEach(e => html += externalCard(e, { user:true }));
       html += '</div>';
     }
   }
@@ -3056,6 +3069,25 @@ ACTIONS.prompts = {
     const id = el.dataset.id;
     confirmDialog('删除私有指令', '确定删除这条私有指令吗？', ()=>{
       State.prompts = State.prompts.filter(x=>x.id!==id); save('prompts'); toast('已删除'); PAGES.prompts();
+    });
+  },
+  addExternal(){
+    formModal('手动添加外部链接', [
+      {key:'name', label:'名称', type:'text', placeholder:'例如：我的提示词收藏'},
+      {key:'url', label:'链接 URL', type:'text', placeholder:'https://... 或 github.com/...'}
+    ], d=>{
+      let url = (d.url||'').trim();
+      if(!d.name || !url){ toast('名称和链接都不能为空','bad'); return; }
+      if(!/^https?:\/\//i.test(url)) url = 'https://' + url;
+      const isGithub = /github\.com/i.test(url);
+      State.externalUser.push({ id:'e_'+Date.now()+'_'+Math.random().toString(36).slice(2,6), name:d.name, url:url, source: isGithub ? 'github' : 'site' });
+      save('externalUser'); toast('已添加','good'); PAGES.prompts();
+    });
+  },
+  delExternal(_, el){
+    const id = el.dataset.id;
+    confirmDialog('删除外部链接', '确定删除这条手动添加的链接吗？', ()=>{
+      State.externalUser = State.externalUser.filter(x=>x.id!==id); save('externalUser'); toast('已删除'); PAGES.prompts();
     });
   }
 };

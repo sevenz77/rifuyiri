@@ -618,6 +618,10 @@ body.dark .prompt-tag.tag-foreign{color:#bfa8ff; background:#2a1f4a; border-colo
 .external-card .prompt-desc{min-height:0;}
 .external-card{display:flex; flex-direction:column;}
 .external-card .prompt-acts{margin-top:auto; padding-top:8px;}
+.external-card .prompt-acts .btn{flex:1;}
+.ext-badge{display:inline-block; font-size:11px; font-weight:700; line-height:1; padding:3px 7px; border-radius:7px; vertical-align:middle; margin-left:4px;}
+.ext-github{color:#fff; background:#24292f;}
+body.dark .ext-github{background:#3a3f46;}
 /* 私有指令 · 分类标签筛选 */
 .prompt-filter{display:flex; flex-wrap:wrap; gap:6px; margin:0 0 14px;}
 .prompt-filter-btn{
