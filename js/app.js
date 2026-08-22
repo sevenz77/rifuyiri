@@ -3064,15 +3064,25 @@ PAGES.prompts = function(){
   const ft = filters.prompts.tab;
   const curTag = filters.prompts.tag || 'all';
 
-  // 私有指令与 config.js 版本同步：版本变化时替换内置指令；用户手动新增的指令保留。
+  // 私有指令与 config.js 版本同步。
+  // v2 迁移策略：首次打上 wb_promptsMigrated_v2 标记时，清空旧内置指令并重新置入当前 config 的 4 条；
+  // 之后版本变化只替换带 _builtin 的内置项，用户手动新增的指令保留。
   const cfgPrompts = (CONFIG.privatePrompts || []).map(p => Object.assign({}, p, {_builtin:true}));
   const promptsVersion = localStorage.getItem('wb_promptsVersion');
+  const migratedV2 = localStorage.getItem('wb_promptsMigrated_v2');
   if(!State.prompts.length && cfgPrompts.length){
     State.prompts = cfgPrompts.map(p => Object.assign({}, p));
     save('prompts');
     localStorage.setItem('wb_promptsVersion', CONFIG.promptsUpdated);
-  } else if(promptsVersion !== CONFIG.promptsUpdated || !State.prompts.some(p => p._builtin)){
-    // 旧数据无 _builtin 标记时，视为全部旧内置指令做一次整体迁移；后续只替换 _builtin 项
+    localStorage.setItem('wb_promptsMigrated_v2', '1');
+  } else if(!migratedV2){
+    // 一次性整体迁移：删掉所有旧指令，重新置入当前 config 指令
+    State.prompts = cfgPrompts.map(p => Object.assign({}, p));
+    save('prompts');
+    localStorage.setItem('wb_promptsVersion', CONFIG.promptsUpdated);
+    localStorage.setItem('wb_promptsMigrated_v2', '1');
+  } else if(promptsVersion !== CONFIG.promptsUpdated){
+    // 后续更新：只替换 _builtin 内置项，保留用户新增
     State.prompts = State.prompts.filter(p => !p._builtin);
     State.prompts = State.prompts.concat(cfgPrompts.map(p => Object.assign({}, p)));
     save('prompts');

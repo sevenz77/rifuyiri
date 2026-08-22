@@ -217,7 +217,7 @@ const CONFIG = {
    *   外部导航：source 标记区分「普通站点 site」与「GitHub 仓库 github」（卡片显示对应角标）。
    *   用户手动添加的链接存 localStorage（State.externalUser），不进 config。
    * ========================================================================= */
-  promptsUpdated: '2026-08-23 01:07',
+  promptsUpdated: '2026-08-23 03:49',
   privatePrompts: [
     { id:'prompt-1', title:'DS提示词生成专家', desc:'根据需求生成一份 Markdown 格式的智能助手提示词', tags:['提示词生成','GPT','DeepSeek','LangGPT'], content:'你是一位大模型提示词生成专家，请根据用户的需求编写一个智能助手的提示词，来指导大模型进行内容生成，要求：\n1. 以 Markdown 格式输出\n2. 贴合用户需求，描述智能助手的定位、能力、知识储备\n3. 提示词应清晰、精确、易于理解，在保持质量的同时，尽可能简洁\n4. 只输出提示词，不要输出多余解释' },
     { id:'prompt-2', title:'结构化提示词', desc:'用 LangGPT 的方式帮你写一个提示词', tags:['LangGPT','提示词生成','GPT'], content:'用 LangGPT 的方式帮我写一个提示词' },
