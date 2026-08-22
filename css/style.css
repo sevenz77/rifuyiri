@@ -512,17 +512,23 @@ body.dark .todo-streak-bar{background:linear-gradient(135deg,#2a3355,#3a3055); c
 .todo-list{margin-bottom:16px;}
 .todo-empty p{margin-top:8px; font-size:14px; opacity:.7;}
 .todo-input-bar{
-  display:flex; gap:10px; position:sticky; bottom:0; background:var(--card);
-  border-radius:16px; box-shadow:var(--shadow); padding:10px 14px; margin-bottom:20px; z-index:5;
+  display:flex; flex-direction:column; gap:10px; position:sticky; bottom:0; z-index:5; margin-bottom:20px;
 }
-/* 拆分两栏：上类型选择，下任务详情 */
-.todo-input-split{flex-direction:column; gap:10px;}
-.todo-kind-row{display:flex; align-items:center; gap:8px;}
-.todo-kind-row .kind-row-label{font-size:12.5px; font-weight:700; color:var(--muted); margin-right:2px; flex:0 0 auto;}
-.todo-kind-row .kt-btn{flex:1; border-radius:10px; background:var(--card2); border:1px solid var(--line);}
+/* 上栏：三个独立小胶囊按钮，不占满整行（约任务栏 1/3，桌面不超过一半） */
+.todo-kind-row{display:flex; align-items:center; gap:8px; width:33%; max-width:360px; min-width:0;}
+.todo-kind-row .kt-btn{flex:1; min-width:0; height:38px; padding:0; border-radius:999px; font-size:13px;
+  background:var(--card); border:1.5px solid var(--line); color:var(--muted); cursor:pointer; transition:.15s;}
+.todo-kind-row .kt-btn[data-kind="long"]{border-color:#3b82f6; color:#3b82f6;}
+.todo-kind-row .kt-btn[data-kind="week"]{border-color:#22c55e; color:#16a34a;}
+.todo-kind-row .kt-btn[data-kind="temp"]{border-color:#f97316; color:#c2410c;}
+.todo-kind-row .kt-btn.on[data-kind="long"]{background:#3b82f6; border-color:#3b82f6; color:#fff;}
+.todo-kind-row .kt-btn.on[data-kind="week"]{background:#22c55e; border-color:#22c55e; color:#fff;}
+.todo-kind-row .kt-btn.on[data-kind="temp"]{background:#f97316; border-color:#f97316; color:#fff;}
 .todo-detail-row{display:flex; gap:10px; align-items:center;}
 .todo-input{flex:1; min-width:0; border-radius:12px !important;}
 .todo-add-btn{width:auto; height:42px; padding:0 18px; border-radius:12px; font-size:15px; font-weight:700; display:flex; align-items:center; justify-content:center; flex:0 0 auto;}
+/* 窄屏：三按钮放宽到一半宽度（仍不超过一半），保证两字可读 */
+@media (max-width:640px){ .todo-kind-row{width:50%; max-width:50%;} }
 
 /* 本月活力图 */
 .mc-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; padding:0 4px;}

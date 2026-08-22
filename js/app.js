@@ -836,10 +836,9 @@ PAGES.todo = function(){
   }
   html += '</div>';
 
-  /* ---- 底部固定输入栏：上栏类型选择（长期/一周/临时），下栏任务详情 + ＋建立 ---- */
-  html += '<div class="todo-input-bar todo-input-split">'+
-    '<div class="kind-toggle todo-kind-row">'+
-      '<span class="kind-row-label">类型</span>'+
+  /* ---- 底部固定输入栏：上栏类型选择（长期/一周/临时，独立小按钮不占满整行），下栏任务详情 + ＋建立 ---- */
+  html += '<div class="todo-input-bar">'+
+    '<div class="todo-kind-row">'+
       '<button class="kt-btn'+(quickKind==='long'?' on':'')+'" data-action="setKind" data-kind="long">长期</button>'+
       '<button class="kt-btn'+(quickKind==='week'?' on':'')+'" data-action="setKind" data-kind="week">一周</button>'+
       '<button class="kt-btn'+(quickKind==='temp'?' on':'')+'" data-action="setKind" data-kind="temp">临时</button>'+
