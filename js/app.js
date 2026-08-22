@@ -3064,10 +3064,19 @@ PAGES.prompts = function(){
   const ft = filters.prompts.tab;
   const curTag = filters.prompts.tag || 'all';
 
-  // 首次打开时，把内置示例写入本地（用户可编辑/删除）
-  if(!State.prompts.length && CONFIG.privatePrompts && CONFIG.privatePrompts.length){
-    State.prompts = CONFIG.privatePrompts.map(p => Object.assign({}, p));
+  // 私有指令与 config.js 版本同步：版本变化时替换内置指令；用户手动新增的指令保留。
+  const cfgPrompts = (CONFIG.privatePrompts || []).map(p => Object.assign({}, p, {_builtin:true}));
+  const promptsVersion = localStorage.getItem('wb_promptsVersion');
+  if(!State.prompts.length && cfgPrompts.length){
+    State.prompts = cfgPrompts.map(p => Object.assign({}, p));
     save('prompts');
+    localStorage.setItem('wb_promptsVersion', CONFIG.promptsUpdated);
+  } else if(promptsVersion !== CONFIG.promptsUpdated || !State.prompts.some(p => p._builtin)){
+    // 旧数据无 _builtin 标记时，视为全部旧内置指令做一次整体迁移；后续只替换 _builtin 项
+    State.prompts = State.prompts.filter(p => !p._builtin);
+    State.prompts = State.prompts.concat(cfgPrompts.map(p => Object.assign({}, p)));
+    save('prompts');
+    localStorage.setItem('wb_promptsVersion', CONFIG.promptsUpdated);
   }
 
   // 兼容迁移：旧 modelTag/note 字段 -> tags 数组
