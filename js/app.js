@@ -3038,11 +3038,21 @@ function promptCard(p, i){
 function externalCard(e, opts){
   opts = opts || {};
   const isGithub = e.source === 'github';
+  // 把 intro 中的费用/登录元信息（【...】开头）单独成段
+  const intro = e.intro || '';
+  const metaMatch = intro.match(/^(【[^】]+】)([\s\S]*)$/);
+  let introHtml = '';
+  if(metaMatch){
+    introHtml = '<div class="prompt-desc-meta">'+esc(metaMatch[1])+'</div>'+
+                '<div>'+esc(metaMatch[2].trim())+'</div>';
+  } else {
+    introHtml = esc(intro);
+  }
   // 用户手动添加的条目支持删除
   const delBtn = opts.user ? '<button class="btn btn-sm btn-danger" data-action="delExternal" data-id="'+esc(e.id)+'">删除</button>' : '';
   return '<div class="card prompt-card external-card">'+
     '<div class="prompt-head">'+esc(e.name)+ (isGithub ? ' <span class="ext-badge ext-github">GitHub</span>' : '') +'</div>'+
-    '<div class="prompt-desc">'+esc(e.intro||'')+'</div>'+
+    '<div class="prompt-desc">'+introHtml+'</div>'+
     '<div class="prompt-acts">'+
       '<a class="btn btn-sm btn-primary" href="'+esc(e.url)+'" target="_blank" rel="noopener">打开链接</a>'+
       delBtn+
