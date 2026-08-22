@@ -133,6 +133,17 @@ body.dark .topbar{background:rgba(28,32,64,.55);}
 }
 .icon-btn:hover{transform:translateY(-1px); color:var(--accent);}
 .red-dot{position:absolute; top:6px; right:7px; width:9px;height:9px;border-radius:50%; background:var(--bad); box-shadow:0 0 0 2px var(--card);}
+/* 数据备份下拉菜单（导入/导出合并按钮） */
+.backup-wrap{position:relative;}
+.backup-menu{
+  position:absolute; top:50px; right:0; min-width:148px; background:var(--card); border:1px solid var(--line);
+  border-radius:14px; box-shadow:var(--shadow); padding:6px; z-index:60;
+}
+.backup-item{
+  display:flex; align-items:center; gap:8px; width:100%; padding:10px 12px; border:none; background:transparent;
+  color:var(--text); font-size:13.5px; font-weight:600; border-radius:10px; cursor:pointer; text-align:left;
+}
+.backup-item:hover{background:var(--card2); color:var(--accent);}
 
 .content{flex:1; overflow-y:auto; padding:20px; }
 .page{max-width:980px; margin:0 auto;}
@@ -209,14 +220,14 @@ body.dark .topbar{background:rgba(28,32,64,.55);}
 /* ---- 长期 / 短期 任务区分 ---- */
 .item-long{border-left:4px solid #3b82f6; background:linear-gradient(90deg, rgba(59,130,246,.10), var(--card2) 45%);}
 .item-week{border-left:4px solid #22c55e; background:linear-gradient(90deg, rgba(34,197,94,.12), var(--card2) 45%);}
-.item-temp{border-left:4px solid #eab308; background:linear-gradient(90deg, rgba(234,179,8,.14), var(--card2) 45%);}
+.item-temp{border-left:4px solid #f97316; background:linear-gradient(90deg, rgba(249,115,22,.14), var(--card2) 45%);}
 .kind-badge{display:inline-block; font-size:10.5px; font-weight:700; padding:1px 7px; border-radius:999px; margin-left:7px; vertical-align:middle;}
 .kind-badge.long{background:rgba(59,130,246,.16); color:#2f6fe0;}
 .kind-badge.week{background:rgba(34,197,94,.20); color:#1a9e4b;}
-.kind-badge.temp{background:rgba(234,179,8,.22); color:#9a7000;}
+.kind-badge.temp{background:rgba(249,115,22,.22); color:#c2410c;}
 body.dark .kind-badge.long{background:rgba(59,130,246,.22); color:#7eb1ff;}
 body.dark .kind-badge.week{background:rgba(34,197,94,.22); color:#5fd58d;}
-body.dark .kind-badge.temp{background:rgba(234,179,8,.28); color:#f0c75c;}
+body.dark .kind-badge.temp{background:rgba(249,115,22,.28); color:#fb923c;}
 
 /* 重复周期徽章 / 截止时间徽章（⭐必加项） */
 .meta-badge{display:inline-block; font-size:10.5px; font-weight:600; padding:1px 7px; border-radius:999px; margin-left:6px; vertical-align:middle; line-height:1.5;}
@@ -237,7 +248,7 @@ body.dark .item.overdue{background:linear-gradient(90deg, rgba(239,68,68,.18), v
 .kt-btn{padding:0 11px; height:42px; font-size:12.5px; font-weight:700; border:none; background:transparent; color:var(--muted); cursor:pointer; transition:.15s;}
 .kt-btn.on[data-kind="long"]{background:#3b82f6; color:#fff;}
 .kt-btn.on[data-kind="week"]{background:#22c55e; color:#fff;}
-.kt-btn.on[data-kind="temp"]{background:#eab308; color:#fff;}
+.kt-btn.on[data-kind="temp"]{background:#f97316; color:#fff;}
 
 /* 三类任务规则提示（紧贴输入栏下方） */
 .kind-rules{display:flex; gap:10px; flex-wrap:wrap; padding:8px 2px 0; font-size:11.5px; color:var(--muted); user-select:none;}
@@ -504,8 +515,14 @@ body.dark .todo-streak-bar{background:linear-gradient(135deg,#2a3355,#3a3055); c
   display:flex; gap:10px; position:sticky; bottom:0; background:var(--card);
   border-radius:16px; box-shadow:var(--shadow); padding:10px 14px; margin-bottom:20px; z-index:5;
 }
+/* 拆分两栏：上类型选择，下任务详情 */
+.todo-input-split{flex-direction:column; gap:10px;}
+.todo-kind-row{display:flex; align-items:center; gap:8px;}
+.todo-kind-row .kind-row-label{font-size:12.5px; font-weight:700; color:var(--muted); margin-right:2px; flex:0 0 auto;}
+.todo-kind-row .kt-btn{flex:1; border-radius:10px; background:var(--card2); border:1px solid var(--line);}
+.todo-detail-row{display:flex; gap:10px; align-items:center;}
 .todo-input{flex:1; min-width:0; border-radius:12px !important;}
-.todo-add-btn{width:46px; height:42px;border-radius:12px;font-size:22px;padding:0;display:flex;align-items:center;justify-content:center;}
+.todo-add-btn{width:auto; height:42px; padding:0 18px; border-radius:12px; font-size:15px; font-weight:700; display:flex; align-items:center; justify-content:center; flex:0 0 auto;}
 
 /* 本月活力图 */
 .mc-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; padding:0 4px;}
@@ -548,11 +565,11 @@ body.dark .mc-today .mc-tag{background:rgba(0,0,0,.45); color:#bdc8ff;}
 .day-row-kind-badge{float:right; font-size:10.5px; padding:2px 7px; border-radius:6px; font-weight:700; line-height:1.4;}
 .kb-long{background:rgba(59,130,246,.12); color:#3b82f6;}
 .kb-week{background:rgba(34,197,94,.14); color:#16a34a;}
-.kb-temp{background:rgba(234,179,8,.16); color:#a16207;}
+.kb-temp{background:rgba(249,115,22,.16); color:#c2410c;}
 /* 已办类型着色左边条 */
 .day-row-kind-long{border-left:3px solid #3b82f6;}
 .day-row-kind-week{border-left:3px solid #22c55e;}
-.day-row-kind-temp{border-left:3px solid #eab308;}
+.day-row-kind-temp{border-left:3px solid #f97316;}
 .day-tip{font-size:11.5px; color:var(--muted); text-align:center; margin-top:8px; padding:6px 10px; background:var(--card2); border-radius:8px;}
 .day-empty{padding:14px; text-align:center; font-size:13px; color:var(--muted); background:var(--card2); border-radius:10px; border:1px dashed var(--line);}
 .todo-filters{display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:4px;}

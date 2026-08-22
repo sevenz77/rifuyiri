@@ -39,6 +39,14 @@ let quickKind='long'; // 底部快捷添加栏当前选中的任务类型（long
   State.tasks.forEach(t=>{ if(t.doneDate && !set.has(t.doneDate)){ set.add(t.doneDate); dirty = true; }});
   if(dirty){ State.checkins = Array.from(set).sort(); save('checkins'); }
 })();
+// 一次性迁移：旧的共用 accountPwd / quotaPwd 拆分为各账本子页独立密码（pwd_<page>）
+(function migratePwd(){
+  const s = State.settings;
+  let dirty = false;
+  if(s.accountPwd){ ['accountMonth','accountYearly','accountAsset'].forEach(p=>{ if(!s['pwd_'+p]){ s['pwd_'+p]=s.accountPwd; dirty=true; } }); delete s.accountPwd; dirty=true; }
+  if(s.quotaPwd){ if(!s['pwd_quota']){ s['pwd_quota']=s.quotaPwd; dirty=true; } delete s.quotaPwd; dirty=true; }
+  if(dirty) saveSettings();
+})();
 // 记录某一天的打卡（幂等：同日重复调用不重复添加）；打卡日志永不删除
 // 同时把当天完成的任务快照存进 checkinItems（如果还没有），便于事后查看
 function recordCheckin(ds){
@@ -312,8 +320,19 @@ function init(){
   });
   $('#themeBtn').addEventListener('click', toggleTheme);
   $('#userChip').addEventListener('click', openAvatarModal);
-  $('#exportBtn').addEventListener('click', exportData);
-  $('#importBtn').addEventListener('click', ()=> $('#importInput').click());
+  // 备份按钮：下拉切换导入/导出
+  const backupBtn = $('#backupBtn'), backupMenu = $('#backupMenu');
+  backupBtn.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    backupMenu.hidden = !backupMenu.hidden;
+  });
+  backupMenu.addEventListener('click', (e)=>{
+    const item = e.target.closest('[data-act]'); if(!item) return;
+    backupMenu.hidden = true;
+    if(item.dataset.act==='export') exportData();
+    else $('#importInput').click();
+  });
+  document.addEventListener('click', ()=>{ if(backupMenu) backupMenu.hidden = true; });
   $('#importInput').addEventListener('change', importData);
   $('#avatarInput').addEventListener('change', handleAvatarUpload);
   $('#content').addEventListener('click', onContentClick);
@@ -407,9 +426,16 @@ function goto(key){
 }
 
 /* 打开页（含密码守卫） */
+// 支持独立密码锁的页面：各自存 settings.pwd_<page>，互不影响
+const PWD_PAGES = ['accountMonth','accountYearly','accountAsset','quota'];
+function pagePwdKey(key){ return 'pwd_'+key; }
+function pagePwdTitle(key){
+  return { accountMonth:'本月账单', accountYearly:'年月概况', accountAsset:'资产管家', quota:'额度追踪' }[key] || '该模块';
+}
+function getPwd(key){ return State.settings[pagePwdKey(key)] || ''; }
+function setPwdVal(key, val){ State.settings[pagePwdKey(key)] = val; saveSettings(); }
 function openPage(key){
-  const needPwd = (key==='quota' && State.settings.quotaPwd) || (key.startsWith('account') && State.settings.accountPwd);
-  if(needPwd){
+  if(PWD_PAGES.includes(key) && getPwd(key)){
     promptPassword(key, ()=> renderPage(key));
   } else {
     renderPage(key);
@@ -460,8 +486,8 @@ function handleAvatarUpload(e){
 
 /* ----------------------------- 密码守卫 ----------------------------- */
 function promptPassword(key, onOk){
-  const title = key==='quota' ? '额度追踪' : '我的账本';
-  const html = '<h3>🔐 '+esc(title)+'（已加密）</h3>'+
+  const title = pagePwdTitle(key);
+  const html = '<h3>🔑 '+esc(title)+'（已加密）</h3>'+
     '<div class="field"><label>请输入打开密码</label><input class="input" id="pwdInput" type="password" placeholder="输入密码"></div>'+
     '<div class="modal-actions"><button class="btn" data-x="cancel">取消</button><button class="btn btn-primary" data-x="ok">进入</button></div>';
   openModal(html);
@@ -470,7 +496,7 @@ function promptPassword(key, onOk){
   setTimeout(()=>input.focus(), 50);
   const tryOk = ()=>{
     const v = input.value;
-    const stored = key==='quota' ? State.settings.quotaPwd : State.settings.accountPwd;
+    const stored = getPwd(key);
     if(v === stored){ delete $('#modalRoot').dataset.lock; closeModal(); onOk(); }
     else { toast('密码错误','bad'); input.value=''; input.focus(); }
   };
@@ -479,9 +505,9 @@ function promptPassword(key, onOk){
   input.addEventListener('keydown', e=>{ if(e.key==='Enter') tryOk(); });
 }
 function openPwdSettings(key){
-  const cur = key==='quota' ? State.settings.quotaPwd : State.settings.accountPwd;
-  const title = key==='quota' ? '额度追踪' : '我的账本';
-  formModal('🔐 '+title+' 密码设置', [
+  const cur = getPwd(key);
+  const title = pagePwdTitle(key);
+  formModal('🔑 '+title+' 密码设置', [
     { key:'mode', label:'操作', type:'select', value: cur?'change':'set',
       options:[ {value:'set',text: cur?'修改密码':'设置密码'}, {value:'clear',text:'清除密码（不再加密）'} ] },
     { key:'old', label:'当前密码（如已设置）', type:'password', placeholder:'留空表示未设置' },
@@ -490,15 +516,11 @@ function openPwdSettings(key){
   ], (d)=>{
     if(cur && d.old !== cur){ toast('当前密码不正确','bad'); return; }
     const back = PAGES[key] ? key : currentPage;   // 'account' 已拆成三个二级页，回到当前页
-    if(d.mode==='clear'){ setPwd(key,''); toast('已清除密码'); renderPage(back); return; }
+    if(d.mode==='clear'){ setPwdVal(key,''); toast('已清除密码'); renderPage(back); return; }
     if(d.pwd.length < 4){ toast('密码至少4位','bad'); return; }
     if(d.pwd !== d.pwd2){ toast('两次输入不一致','bad'); return; }
-    setPwd(key, d.pwd); toast('密码已保存'); renderPage(back);
+    setPwdVal(key, d.pwd); toast('密码已保存'); renderPage(back);
   });
-}
-function setPwd(key, val){
-  if(key==='quota') State.settings.quotaPwd = val; else State.settings.accountPwd = val;
-  saveSettings();
 }
 
 /* ----------------------------- 每日重置 ----------------------------- */
@@ -537,18 +559,24 @@ function checkExportReminder(){
   }
 }
 function exportData(){
+  // 完整导出：State 内数据 + 独立 localStorage 键（userCats / catOrder）
+  const userCats = (function(){ try{ return JSON.parse(localStorage.getItem('wb_userCats')||'null'); }catch(e){ return null; } })();
+  const catOrder = (function(){ try{ return JSON.parse(localStorage.getItem('wb_catOrder')||'null'); }catch(e){ return null; } })();
   const data = {
     _app:'日富一日·钱途光明', _exportedAt: nowStr(),
     tasks:State.tasks, quotas:State.quotas,
     accounts:State.accounts, assets:State.assets, settings:State.settings,
     budgets:State.budgets, recurring:State.recurring,
     checkins:State.checkins, checkinItems:State.checkinItems,
-    prompts:State.prompts, externalUser:State.externalUser
+    prompts:State.prompts, externalUser:State.externalUser,
+    userCats: userCats, catOrder: catOrder
   };
   const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = '钱途光明备份_'+todayStr()+'.json';
+  // 备份名：日富一日备份_年月日_时（如 日富一日备份_20260822-16）
+  const stamp = (function(){ const n=new Date(); return n.getFullYear()+pad(n.getMonth()+1)+pad(n.getDate())+'-'+pad(n.getHours()); })();
+  a.href = url; a.download = '日富一日备份_'+stamp+'.json';
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
   State.settings.lastExport = todayStr(); saveSettings();
@@ -573,6 +601,9 @@ function importData(e){
         if(d.recurring)    State.recurring    = d.recurring;
         if(d.checkins)     State.checkins     = d.checkins;
         if(d.checkinItems) State.checkinItems = d.checkinItems;
+        // 自定义分类与排序（独立 localStorage 键，需单独恢复）
+        if(d.userCats)  localStorage.setItem('wb_userCats', JSON.stringify(d.userCats));
+        if(d.catOrder)  localStorage.setItem('wb_catOrder', JSON.stringify(d.catOrder));
         save('tasks'); save('quotas'); save('accounts'); save('assets'); save('prompts'); save('externalUser'); saveSettings();
         save('budgets'); save('recurring'); save('checkins'); save('checkinItems');
         updateAvatar(); applyTheme(); checkExportReminder();
@@ -805,15 +836,18 @@ PAGES.todo = function(){
   }
   html += '</div>';
 
-  /* ---- 底部固定输入栏 + 规则说明 ---- */
-  html += '<div class="todo-input-bar">'+
-    '<div class="kind-toggle">'+
+  /* ---- 底部固定输入栏：上栏类型选择（长期/一周/临时），下栏任务详情 + ＋建立 ---- */
+  html += '<div class="todo-input-bar todo-input-split">'+
+    '<div class="kind-toggle todo-kind-row">'+
+      '<span class="kind-row-label">类型</span>'+
       '<button class="kt-btn'+(quickKind==='long'?' on':'')+'" data-action="setKind" data-kind="long">长期</button>'+
       '<button class="kt-btn'+(quickKind==='week'?' on':'')+'" data-action="setKind" data-kind="week">一周</button>'+
       '<button class="kt-btn'+(quickKind==='temp'?' on':'')+'" data-action="setKind" data-kind="temp">临时</button>'+
     '</div>'+
-    '<input class="input todo-input" id="todoInput" placeholder="任务内容（当前：'+(quickKind==='long'?'长期=永久保留':(quickKind==='week'?'一周=7天后自动取消':'临时=次日消失'))+'）">'+
-    '<button class="btn btn-primary todo-add-btn" data-action="quickAddTask">＋</button>'+
+    '<div class="todo-detail-row">'+
+      '<input class="input todo-input" id="todoInput" placeholder="任务详情（当前：'+(quickKind==='long'?'长期=永久保留':(quickKind==='week'?'一周=7天后自动取消':'临时=次日消失'))+'）">'+
+      '<button class="btn btn-primary todo-add-btn" data-action="quickAddTask">＋ 建立</button>'+
+    '</div>'+
     '</div>';
 
   /* ---- 本月活力图（年月合并到卡片标题行，节省垂直空间） ---- */
@@ -1034,13 +1068,13 @@ PAGES.quota = function(){
   else list = list.filter(q=>  q.archived);
   if(f.q) list = list.filter(q=> q.name.toLowerCase().includes(f.q.toLowerCase()));
   const b = batch.quota || {on:false,sel:new Set()};
-  const hasPwd = !!State.settings.quotaPwd;
+  const hasPwd = !!getPwd('quota');
   const archivedCount = State.quotas.filter(q=>q.archived).length;
 
   let html = '<div class="page">';
   html += '<div class="card"><div class="card-title">'+icon('quota')+'额度追踪'+
     '<span class="spacer" style="flex:1"></span>'+
-    '<button class="btn btn-sm" data-action="pwdSet" title="密码设置">🔐 '+(hasPwd?'已加密':'未加密')+'</button></div>';
+    '<button class="btn btn-sm" data-action="pwdSet" title="密码设置">🔑 '+(hasPwd?'已加密':'未加密')+'</button></div>';
   if(view==='active'){
     html += '<div class="toolbar">'+
       '<button class="btn btn-primary btn-sm" data-action="addQuota">＋ 新增</button>'+
@@ -1570,7 +1604,7 @@ PAGES.accountMonth = function(){
 
   let html = '<div class="page">';
   html += '<div class="card"><div class="card-title">'+icon('account')+'本月账单'+
-    '<span style="flex:1"></span><button class="btn btn-sm" data-action="pwdSet">🔐 '+(State.settings.accountPwd?'已加密':'未加密')+'</button></div>';
+    '<span style="flex:1"></span><button class="btn btn-sm" data-action="pwdSet">🔑 '+(getPwd(currentPage)?'已加密':'未加密')+'</button></div>';
   html += '<div class="month-switch">'+
     '<button class="btn btn-sm btn-soft" data-action="prevMonth">‹ 上月</button>'+
     '<div class="month-title">'+cy+' 年 '+parseInt(cm,10)+' 月'+(isCur?'<span class="mcur">本月</span>':'')+'</div>'+
@@ -2074,7 +2108,7 @@ PAGES.accountAsset = function(){
 
   let html = '<div class="page">';
   html += '<div class="card"><div class="card-title">🏦 资产管家'+
-    '<span style="flex:1"></span><button class="btn btn-sm" data-action="pwdSet">🔐 '+(State.settings.accountPwd?'已加密':'未加密')+'</button></div>';
+    '<span style="flex:1"></span><button class="btn btn-sm" data-action="pwdSet">🔑 '+(getPwd(currentPage)?'已加密':'未加密')+'</button></div>';
   html += '<div class="stat-row">'+
     '<div class="stat income"><div class="label">总资产</div><div class="val">'+fmt(totalAsset)+'</div></div>'+
     '<div class="stat expense"><div class="label">总负债</div><div class="val">'+fmt(totalLiab)+'</div></div>'+
@@ -2258,7 +2292,7 @@ function assetForm(a, isLiab){
 }
 
 const ACCOUNT_ACTIONS = {
-  pwdSet(){ openPwdSettings('account'); },
+  pwdSet(){ openPwdSettings(currentPage); },
   /* ---- 月份 / 视图切换 ---- */
   prevMonth(){ acctMonthCursor = shiftYM(acctYM(), -1); PAGES.accountMonth(); },
   nextMonth(){ acctMonthCursor = shiftYM(acctYM(),  1); PAGES.accountMonth(); },
