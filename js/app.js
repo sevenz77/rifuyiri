@@ -1937,7 +1937,7 @@ PAGES.accountYearly = function(){
 
   /* ======== 顶部【原】年月账单（月/年切换 + 12月明细 + 年度补录）· 保留原功能 ======== */
   html += '<div class="card"><div class="card-title">📊 年月账单'+
-    '<span style="flex:1"></span></div>'+
+    '<span style="flex:1"></span><button class="btn btn-sm" data-action="pwdSet">🔑 '+(getPwd(currentPage)?'已加密':'未加密')+'</button></div>'+
     '<div class="ai-tabs" style="margin-bottom:0">'+
     '<div class="ai-tab'+(billView==='month'?' active':'')+'" data-action="setBillView" data-v="month">月账单</div>'+
     '<div class="ai-tab'+(billView==='year'?' active':'')+'" data-action="setBillView" data-v="year">年账单</div>'+
