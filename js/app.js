@@ -1225,19 +1225,34 @@ function renderQuotaDetail(q){
 /* =============================================================================
  * 页面 4：我的账本（参照鲨鱼记账）
  * =========================================================================== */
-/* 支出分类（按参考图扩充为 26 个，含 emoji 图标） */
+/* 支出分类：一级平铺 + 内置快捷标签（tags） */
 const ACCOUNT_CATS_EXP = [
-  {key:'餐饮',icon:'🍜'}, {key:'娱乐',icon:'🎮'}, {key:'购物',icon:'🛍️'}, {key:'红包',icon:'🧧'},
-  {key:'日用',icon:'🧹'}, {key:'交通',icon:'🚌'}, {key:'住房',icon:'🏠'}, {key:'社交',icon:'🍻'},
-  {key:'蔬菜',icon:'🥬'}, {key:'水果',icon:'🍎'}, {key:'零食',icon:'🍪'}, {key:'运动',icon:'🏃'},
-  {key:'通讯',icon:'📱'}, {key:'服饰',icon:'👕'}, {key:'美容',icon:'💄'}, {key:'居家',icon:'🛋️'},
-  {key:'旅行',icon:'✈️'}, {key:'数码',icon:'💻'}, {key:'医疗',icon:'💊'}, {key:'书籍',icon:'📚'},
-  {key:'学习',icon:'📖'}, {key:'办公',icon:'🗂️'}, {key:'维修',icon:'🔧'}, {key:'快递',icon:'📦'},
-  {key:'消费',icon:'💸'}, {key:'设置',icon:'⚙️'}
+  {key:'餐饮',icon:'🍜',tags:['三餐','外卖','零食','水果','蔬菜','饮料','聚餐']},
+  {key:'购物',icon:'🛍️',tags:['日用','服饰','鞋包','数码','家居']},
+  {key:'交通',icon:'🚌',tags:['公交地铁','打车','动车','机票']},
+  {key:'医疗',icon:'💊',tags:['门诊','买药','住院','体检']},
+  {key:'娱乐',icon:'🎮',tags:['电影','游戏','会员','小说','KTV','演出']},
+  {key:'通讯',icon:'📱',tags:['话费','AI+','宽带']},
+  {key:'美容',icon:'💄',tags:['洗剪吹','洗头','剪发','护肤','美发']},
+  {key:'学习',icon:'📖',tags:['教材','网课','培训','考试费']},
+  {key:'保险',icon:'🛡️',tags:['医疗','寿险','意外险','重疾险']},
+  {key:'住房',icon:'🏠',tags:['房租','水电','燃气','物业','家具维修','家电']},
+  {key:'社交',icon:'🍻',tags:['红包','请客','礼物','礼金']},
+  {key:'旅行',icon:'✈️',tags:['酒店','门票','当地交通','伴手礼']},
+  {key:'数码',icon:'💻',tags:['电子产品','配件','维修']},
+  {key:'运动',icon:'🏃',tags:['健身','装备','赛事','户外']},
+  {key:'快递',icon:'📦',tags:['寄件','到付']},
+  {key:'其他',icon:'⚪',tags:[]}
 ];
-/* 收入分类 */
+/* 收入分类：一级平铺 + 内置快捷标签（tags） */
 const ACCOUNT_CATS_INC = [
-  {key:'工资',icon:'💰'}, {key:'理财',icon:'📈'}, {key:'其他',icon:'📦'}, {key:'收礼',icon:'🎁'}
+  {key:'工资',icon:'💰',tags:['基本工资','奖金','年终奖','补贴']},
+  {key:'兼职',icon:'💼',tags:['劳务','稿费','外包']},
+  {key:'理财',icon:'📈',tags:['利息','股息','租金','基金收益']},
+  {key:'红包',icon:'🧧',tags:['亲友红包','过节礼金']},
+  {key:'转账',icon:'↔️',tags:['他人转账','往来款']},
+  {key:'退款',icon:'↩️',tags:['购物退款','报销返还']},
+  {key:'其他',icon:'⚪',tags:[]}
 ];
 /* 合并（去重 key，支出优先） */
 const ACCOUNT_ALL = ACCOUNT_CATS_EXP.concat(ACCOUNT_CATS_INC.filter(c=>!ACCOUNT_CATS_EXP.find(x=>x.key===c.key)));
@@ -1248,6 +1263,25 @@ function catMeta(c){
 }
 function catIcon(c){ return catMeta(c).icon; }
 function catType(c){ return ACCOUNT_CATS_INC.find(x=>x.key===c) ? 'income' : 'expense'; }
+
+/* 备注中的 [标签] 解析 / 组合 */
+function parseTagNote(note){
+  const n = (note||'').trim();
+  const tags = [];
+  let rest = n;
+  const re = /^\[([^\]]+)\]\s*/;
+  while(re.test(rest)){ const m = rest.match(re); tags.push(m[1]); rest = rest.slice(m[0].length); }
+  return { tags, note: rest.trim() };
+}
+function joinTagNote(tags, note){
+  const t = (tags||[]).map(t=>'['+t+']').join('');
+  const n = (note||'').trim();
+  return t + (t && n ? ' ' : '') + n;
+}
+function catTags(c){
+  const m = catMeta(c);
+  return (m && m.tags) ? m.tags.slice() : [];
+}
 
 /* 用户自定义分类（持久化到 localStorage）· 与内置合并后返回完整分类列表 */
 const DEFAULT_USER_CATS = { expense: [], income: [] };
@@ -1357,40 +1391,33 @@ PAGES.accountQuick = function(){
   let html = '<div class="page">';
   html += '<div class="card"><div class="card-title">⚡ 快速记一笔'+
     '<span style="flex:1"></span>'+
-    '<button class="btn btn-sm '+(catMoveOn?'btn-primary':'btn-soft')+'" data-action="toggleMoveMode" title="'+(catMoveOn?'点击关闭移位（分类格将不可拖动）':'点击开启移位，分类格将可拖动排序')+'">'+
-      (catMoveOn?'🔒 移位中':'🔓 移位')+
+    '<button class="btn btn-sm '+(catMoveOn?'btn-primary':'btn-soft')+'" data-action="toggleMoveMode" title="'+(catMoveOn?'点击锁定（分类格恢复不可拖动）':'点击解锁，分类格可拖动排序')+'">'+
+      (catMoveOn?'🔓 移位中':'🔒 移位')+
     '</button>'+
     '<button class="btn btn-sm" data-action="smartAdd">➕ 智能输入</button></div>';
 
-  // 支出 / 收入 切换
-  html += '<div class="ai-tabs" style="margin-bottom:14px">'+
-    '<div class="ai-tab'+(type==='expense'?' active':'')+'" data-action="setQuickType" data-t="expense">支出 ▾</div>'+
+  // 支出 / 收入 / 设置 三个 Tab：支出/收入切换类型，设置打开分类管理
+  html += '<div class="ai-tabs quick-tabs" style="margin-bottom:14px">'+
+    '<div class="ai-tab'+(type==='expense'?' active':'')+'" data-action="setQuickType" data-t="expense">支出</div>'+
     '<div class="ai-tab'+(type==='income'?' active':'')+'" data-action="setQuickType" data-t="income">收入</div>'+
+    '<div class="ai-tab" data-action="openCatManager">设置</div>'+
     '</div>';
 
-  // 分类网格（4 列）· 移位模式开启时可拖；「设置」格承载分类管理（替代原「其他」入口）
+  // 分类网格（4 列）· 移位模式开启时可拖
   html += '<div class="quick-grid qgrid4'+(catMoveOn?' qg-move':'')+'">';
-  const hasMgr = cats.some(c=>c.key==='设置');
   cats.forEach(c=>{
-    const isMgr = c.key==='设置';
-    const act = isMgr ? 'openCatManager' : 'quickAdd';
-    html += '<div class="quick'+(catMoveOn?' qmove':'')+'" data-action="'+act+'"'+(isMgr?'':' data-cat="'+c.key+'" data-type="'+type+'"')+
+    html += '<div class="quick'+(catMoveOn?' qmove':'')+'" data-action="quickAdd" data-cat="'+c.key+'" data-type="'+type+'"'+
       (catMoveOn?' title="按住可拖动排序"':'')+'>'+
       '<div class="q-ic">'+c.icon+'</div>'+c.key+
       (catMoveOn?'<div class="q-grip">⋮⋮</div>':'')+
     '</div>';
   });
-  // 收入等无内置「设置」分类的类型，追加一个「设置」管理入口（复用虚线管理格样式）
-  if(!hasMgr){
-    html += '<div class="quick q-other" data-action="openCatManager" title="管理分类 / 在此排序所有分类">'+
-      '<div class="q-ic">⚙️</div>设置</div>';
-  }
   html += '</div>';
 
   html += '<div class="mstat-legend">'+
     (catMoveOn
-      ? '移位中：长按分类可上下拖动排序，再点「🔒 移位中」关闭'
-      : '点分类直接记一笔（默认'+ (type==='income'?'收入':'支出') +'） · 也可「智能输入」一次性录多笔 · 需排序时点右上「🔓 移位」')+
+      ? '移位中：长按分类可上下拖动排序，再点「🔓 移位中」锁定'
+      : '点分类直接记一笔（默认'+ (type==='income'?'收入':'支出') +'） · 也可「智能输入」一次性录多笔 · 需排序时点右上「🔒 移位」解锁')+
   '</div>';
   html += '</div></div>';
   $('#content').innerHTML = html;
@@ -2135,18 +2162,67 @@ function txForm(title, prefill, onOk){
   const defLabel = '跟随默认卡'+(dPay||dInc ? '（支出→'+(dPay?dPay.name:'无')+' / 收入→'+(dInc?dInc.name:'无')+'）' : '（暂未设默认卡）');
   const cardOpts = [{value:'__def__',text:defLabel},{value:'',text:'不绑卡（不影响资产）'}]
     .concat(State.assets.map(a=>({ value:a.id, text:(a.kind==='liability'?'🧾 ':'💳 ')+a.name })));
+  // 解析备注中已有的 [标签]，自由文字放输入框，标签状态单独维护
+  const parsed = parseTagNote(prefill.note);
+  let selectedTags = parsed.tags.slice();
+  const freeNote = parsed.note;
   formModal(title, [
     {key:'type',label:'类型',type:'select',value:prefill.type||'expense',options:[{value:'expense',text:'支出'},{value:'income',text:'收入'}]},
-    {key:'cat',label:'分类',type:'select',value:prefill.cat||'餐饮',options:ACCOUNT_ALL.map(c=>({value:c.key,text:c.key}))},
+    {key:'cat',label:'分类',type:'select',value:prefill.cat||'餐饮',options:ACCOUNT_ALL.map(c=>({value:c.key,text:c.icon+' '+c.key}))},
     {key:'amount',label:'金额',type:'number',value:prefill.amount||'',placeholder:'0.00'},
-    {key:'note',label:'备注',value:prefill.note||'',placeholder:'选填'},
+    {key:'note',label:'备注',value:freeNote,placeholder:'自由备注（选填）'},
     {key:'date',label:'日期',type:'text',value:prefill.date||todayStr()},
     {key:'accountId',label:'归属卡片',type:'select',value:(prefill.accountId!==undefined?prefill.accountId:'__def__'),options:cardOpts}
   ], d=>{
     const amt = parseFloat(d.amount);
     if(isNaN(amt)||amt<=0){ toast('请输入有效金额','bad'); return; }
+    // 把选中的标签自动并入备注，格式：[标签1][标签2] 自由备注
+    d.note = joinTagNote(selectedTags, d.note);
     onOk(d, round2(amt));
   });
+  // 在备注字段后注入快捷标签选择区
+  const noteWrap = $('#modalRoot .field:has([data-k="note"])');
+  if(noteWrap){
+    const tagEl = document.createElement('div');
+    tagEl.className = 'tx-tag-area';
+    tagEl.id = 'txTagArea';
+    noteWrap.parentNode.insertBefore(tagEl, noteWrap.nextSibling);
+  }
+  function renderTxTags(cat){
+    const area = $('#txTagArea'); if(!area) return;
+    const tags = catTags(cat);
+    if(!tags.length){ area.innerHTML = ''; area.style.display='none'; return; }
+    area.style.display='block';
+    area.innerHTML = '<div class="tx-tag-label">快捷标签（点击选中，自动并入备注）</div>'+
+      '<div class="tx-tag-chips">'+tags.map(t=>{
+        const on = selectedTags.includes(t);
+        return '<span class="tx-tag '+(on?'on':'')+'" data-t="'+esc(t)+'">'+esc(t)+'</span>';
+      }).join('')+'</div>';
+    area.querySelectorAll('.tx-tag').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        const t = el.dataset.t;
+        if(selectedTags.includes(t)) selectedTags = selectedTags.filter(x=>x!==t);
+        else selectedTags.push(t);
+        renderTxTags(cat);
+        const noteInp = $('#modalRoot [data-k="note"]');
+        if(noteInp){ noteInp.value = joinTagNote(selectedTags, noteInp.value); }
+      });
+    });
+  }
+  renderTxTags(prefill.cat||'餐饮');
+  const catSel = $('#modalRoot [data-k="cat"]');
+  if(catSel){
+    catSel.addEventListener('change', ()=>{
+      const newCat = catSel.value; // value 就是 key
+      const noteInp = $('#modalRoot [data-k="note"]');
+      const cur = parseTagNote(noteInp ? noteInp.value : '');
+      const avail = catTags(newCat);
+      selectedTags = cur.tags.filter(t=> avail.includes(t));
+      if(noteInp) noteInp.value = cur.note;
+      renderTxTags(newCat);
+      if(noteInp) noteInp.value = joinTagNote(selectedTags, noteInp.value);
+    });
+  }
 }
 /* 卡片表单（资产/负债共用）。isLiab=true 时余额以负数存储 */
 function assetForm(a, isLiab){
