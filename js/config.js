@@ -217,28 +217,37 @@ const CONFIG = {
    *   外部导航：source 标记区分「普通站点 site」与「GitHub 仓库 github」（卡片显示对应角标）。
    *   用户手动添加的链接存 localStorage（State.externalUser），不进 config。
    * ========================================================================= */
-  promptsUpdated: '2026-08-21 23:47',
+  promptsUpdated: '2026-08-22 17:18',
   privatePrompts: [
     { id:'prompt-1', title:'新媒体标题党生成器', desc:'输入主题，输出 5 个高点击率标题', tags:['通用对话模型','新媒体','标题党'], content:'你是一位资深新媒体编辑。请围绕用户给定的主题，输出 5 个不同风格的标题（悬念型、数字型、对比型、痛点型、共鸣型），并简要说明每个标题的吸睛点。主题：{{主题}}' },
     { id:'prompt-2', title:'小说场景扩写', desc:'把一句话梗概扩展成 300 字细腻场景', tags:['Claude','GPT-4','写作'], content:'你擅长细腻的场景描写。请将下面的一句话梗概扩写成一段约 300 字的场景描写，保留省略号与留白，避免 AI 味句式。梗概：{{梗概}}' },
     { id:'prompt-3', title:'Excel 数据清洗', desc:'把脏数据整理成结构化表格', tags:['通用对话模型','办公','表格'], content:'请将用户提供的原始文本数据清洗并整理成 Markdown 表格。要求：1) 统一日期格式为 YYYY-MM-DD；2) 金额统一保留两位小数；3) 去除空行与重复项；4) 在表格下方给出清洗说明。数据：{{数据}}' },
-    { id:'prompt-4', title:'AI 工具选型对比', desc:'输入需求，给出三款工具横向对比', tags:['通用对话模型','决策','工具'], content:'用户有一个具体需求，请推荐 3 款最合适的工具/方案，用表格对比价格、优缺点、适用场景，并给出最终推荐。需求：{{需求}}' }
+    { id:'prompt-4', title:'AI 工具选型对比', desc:'输入需求，给出三款工具横向对比', tags:['通用对话模型','决策','工具'], content:'用户有一个具体需求，请推荐 3 款最合适的工具/方案，用表格对比价格、优缺点、适用场景，并给出最终推荐。需求：{{需求}}' },
+    { id:'prompt-5', title:'通用万能优化Prompt（LangGPT结构）', desc:'用 LangGPT 结构化框架优化你的简短指令，适配 GPT', tags:['通用对话模型','GPT','提示词优化','LangGPT'], content:'请使用LangGPT结构化框架优化下面这条提示词，补充角色、约束、工作流程、输出格式；不要编造额外需求，保留我的原始目标，输出一份可以直接粘贴进GPT使用的完整提示词：\n【粘贴你原始简短指令】' },
+    { id:'prompt-6', title:'DS提示词生成专家', desc:'根据需求生成一份 Markdown 格式的智能助手提示词', tags:['通用对话模型','DeepSeek','提示词生成','GPT'], content:'你是一位大模型提示词生成专家，请根据用户的需求编写一个智能助手的提示词，来指导大模型进行内容生成，要求：\n1. 以 Markdown 格式输出\n2. 贴合用户需求，描述智能助手的定位、能力、知识储备\n3. 提示词应清晰、精确、易于理解，在保持质量的同时，尽可能简洁\n4. 只输出提示词，不要输出多余解释\n【粘贴你的助手要求】' }
   ],
   externalPrompts: [
-    { name:'AiShort', intro:'中文 AI 快捷指令表，分类清晰、一键复制', url:'https://www.aishort.top/', source:'site' },
-    { name:'Prompt123', intro:'国内免费 AI 提示词平台，覆盖写作/办公/编程/绘画', url:'https://www.prompt123.cn/', source:'site' },
-    { name:'WayToAGI 提示词库', intro:'专业精选 Prompt，覆盖文案、脚本、运营全场景', url:'https://www.waytoagi.com/zh/prompts', source:'site' },
-    { name:'PromptHub', intro:'中文 AI 提示词社区，5000+ 模板，浏览器插件可用', url:'https://prompthub.xin/', source:'site' },
-    { name:'PromptUp', intro:'提示词发现、存储与分享平台，多语言支持', url:'https://promptup.net/', source:'site' },
-    { name:'发现 AI 指令', intro:'高阶 AI 指令词合集，覆盖内容创作、电商、学术等', url:'https://www.faxianai.com/prompt/deepseek', source:'site' },
-    { name:'AI 指令合集', intro:'工具网站指令合集，覆盖写作、面试、程序开发等', url:'https://www.luyinzhushou.com/aizhiling/', source:'site' },
-    { name:'PromptHero', intro:'全球最大提示词库之一，覆盖文生图、ChatGPT 等', url:'https://prompthero.com', source:'site' },
-    { name:'FlowGPT', intro:'海外最大提示词分享与聊天社区', url:'https://flowgpt.com', source:'site' },
-    { name:'PromptBase', intro:'提示词交易市场，覆盖写作、图像、编程', url:'https://promptbase.com', source:'site' },
-    { name:'SnackPrompt', intro:'团队协作型提示词库，可按角色/场景筛选', url:'https://snackprompt.com', source:'site' },
-    { name:'AIPRM', intro:'浏览器插件，直接在 ChatGPT 页面调用数千 Prompt', url:'https://www.aiprm.com', source:'site' },
-    { name:'LangGPT', intro:'结构化提示词方法论与模板社区，GitHub 开源', url:'https://github.com/EmbraceAGI/LangGPT', source:'github' },
-    { name:'Awesome ChatGPT Prompts', intro:'英文经典提示词仓库，持续更新，GitHub 开源', url:'https://github.com/f/awesome-chatgpt-prompts', source:'github' }
+    /* ===== 国内直连 · 中文优先（中文综合平台） ===== */
+    { name:'AiShort', region:'cn', intro:'【免费·游客可浏览/搜索/复制，注册仅解锁收藏】中文 AI 快捷指令表，分类清晰、一键复制。纯模板库，不支持自动生成/优化。', url:'https://www.aishort.top/', source:'site' },
+    { name:'驾驭AI', region:'cn', intro:'【基础免费；提示词库游客可浏览复制，AI提示词优化器需注册】一句话粗糙短句自动扩写成结构化专业 prompt（对标 LangGPT 思路），兼容 GPT/Claude/豆包/Kimi。', url:'https://www.jiayuai.net/', source:'site' },
+    { name:'Prompt123', region:'cn', intro:'【全部免费·游客直接用无需注册】中文现成 prompt 库（GPT/Kimi/DeepSeek），覆盖文案/学术/短视频/编程；内置简易提示词生成工具。', url:'https://www.prompt123.cn/', source:'site' },
+    { name:'PromptFlow', region:'cn', intro:'【免费开源·游客零注册】模板库 + 需求输入自动生成 prompt、反向提纯优化，结构化输出，贴近 LangGPT 模块化思想；浏览器本地运行。', url:'https://llyhy.github.io/promptflow/', source:'site' },
+    { name:'WayToAGI 提示词库', region:'cn', intro:'【免费】中文精选 Prompt，覆盖文案、脚本、运营全场景。', url:'https://www.waytoagi.com/zh/prompts', source:'site' },
+    { name:'PromptHub', region:'cn', intro:'【免费】中文 AI 提示词社区，5000+ 模板，浏览器插件可用。', url:'https://prompthub.xin/', source:'site' },
+    { name:'PromptUp', region:'cn', intro:'【免费】提示词发现、存储与分享平台，多语言支持。', url:'https://promptup.net/', source:'site' },
+    { name:'发现 AI 指令', region:'cn', intro:'【免费】高阶 AI 指令词合集，覆盖内容创作、电商、学术等。', url:'https://www.faxianai.com/prompt/deepseek', source:'site' },
+    { name:'AI 指令合集', region:'cn', intro:'【免费】工具网站指令合集，覆盖写作、面试、程序开发等。', url:'https://www.luyinzhushou.com/aizhiling/', source:'site' },
+    /* ===== 海外 · GPT 原生（ChatGPT/GPT4o 社区 & 专业优化工具） ===== */
+    { name:'FlowGPT', region:'foreign', intro:'【基础免费（部分 GPTs/专属 prompt 付费）；游客可搜索/查看/复制，发布需注册】全球海量 GPT 实测提示词、完整系统角色 prompt，可找到大量结构化 LangGPT 风格模板。', url:'https://flowgpt.com', source:'site' },
+    { name:'Promptsa', region:'foreign', intro:'【基础免费·有每日限额；游客免注册用全套生成/优化工具，原生中文】一句话需求自动生成适配 GPT/Claude 的专业 prompt，支持已有提示词优化。', url:'https://promptsa.com/zh-CN', source:'site' },
+    { name:'Get Prompt', region:'foreign', intro:'【免费版每日限额；游客免注册全套生成/优化/质检工具】提示词生成、润色优化、质量打分，专门适配 GPT 系列模型。', url:'https://getprompt.cc', source:'site' },
+    { name:'PromptTools.dev', region:'foreign', intro:'【基础免费·每日限额；游客免注册】Prompt 优化、质量评分、多模型对比测试，适合精细调试 GPT 提示词。', url:'https://prompttools.dev/', source:'site' },
+    { name:'PromptHero', region:'foreign', intro:'【免费】全球最大提示词库之一，覆盖文生图、ChatGPT 等。', url:'https://prompthero.com', source:'site' },
+    { name:'PromptBase', region:'foreign', intro:'【免费浏览】提示词交易市场，覆盖写作、图像、编程。', url:'https://promptbase.com', source:'site' },
+    { name:'SnackPrompt', region:'foreign', intro:'【免费】团队协作型提示词库，可按角色/场景筛选。', url:'https://snackprompt.com', source:'site' },
+    { name:'AIPRM', region:'foreign', intro:'【免费插件】浏览器插件，直接在 ChatGPT 页面调用数千 Prompt。', url:'https://www.aiprm.com', source:'site' },
+    { name:'LangGPT', region:'foreign', intro:'【开源免费·非在线工具】结构化提示词框架（Role/Profile/Skills/Rules/Workflow），学会后可自己把简单需求搭成高质量结构化 prompt；很多平台优化逻辑源自它。', url:'https://github.com/EmbraceAGI/LangGPT', source:'github' },
+    { name:'Awesome ChatGPT Prompts', region:'foreign', intro:'【开源免费】英文经典提示词仓库，持续更新。', url:'https://github.com/f/awesome-chatgpt-prompts', source:'github' }
   ],
 
   thirdPartyClients: {

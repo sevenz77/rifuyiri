@@ -3117,14 +3117,21 @@ PAGES.prompts = function(){
     }
     const cfgExts = CONFIG.externalPrompts || [];
     const userExts = (State.externalUser || []).map(x => Object.assign({}, x, { source: x.source || 'site' }));
-    const exts = cfgExts.concat(userExts);
-    if(exts.length===0){
+    const cnExts = cfgExts.filter(e => e.region === 'cn');
+    const foreignExts = cfgExts.filter(e => e.region === 'foreign');
+    const renderExtGroup = (title, list, isUser) => {
+      if(!list.length) return '';
+      let h = '<div class="ext-group-title">'+esc(title)+'</div><div class="prompt-grid">';
+      list.forEach(e => h += externalCard(e, { user: !!isUser }));
+      h += '</div>';
+      return h;
+    };
+    if(!cfgExts.length && !userExts.length){
       html += '<div class="empty" style="padding:16px;color:var(--muted)">暂无外部导航数据。</div>';
     } else {
-      html += '<div class="prompt-grid">';
-      cfgExts.forEach(e => html += externalCard(e, { user:false }));
-      userExts.forEach(e => html += externalCard(e, { user:true }));
-      html += '</div>';
+      html += renderExtGroup('国内直连 · 中文优先', cnExts, false);
+      html += renderExtGroup('海外 · GPT 原生', foreignExts, false);
+      if(userExts.length) html += renderExtGroup('自定义链接', userExts, true);
     }
   }
 
